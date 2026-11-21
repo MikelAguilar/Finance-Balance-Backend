@@ -1,0 +1,60 @@
+# ===== Secretos y configuración local =====
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+build/
+dist/
+.eggs/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.log
+
+# ===== Reportes de herramientas de seguridad y CI =====
+bandit-report.*
+pip-audit-report.*
+gitleaks-report.*
+
+# ===== Datos locales de Docker y bases de datos =====
+pgdata/
+postgres-data/
+*.dump
+*.sql.gz
+
+# ===== IDEs y editores =====
+.idea/
+.vscode/
+*.iml
+*.swp
+.history/
+
+# ===== Sistema operativo =====
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+# Linux
+*~
+.Trash-*
