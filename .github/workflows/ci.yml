@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  calidad:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - run: ruff check .
+      - run: ruff format --check .
+      - run: pytest
+
+  docker:
+    needs: calidad
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      # Valores de ejemplo: la base de datos solo existe durante esta ejecución.
+      - run: cp .env.example .env
+      - run: docker compose up --build -d --wait
+      - run: curl --fail --retry 15 --retry-delay 2 --retry-all-errors http://localhost:8000/health
+      - if: failure()
+        run: docker compose logs
+      - if: always()
+        run: docker compose down -v
