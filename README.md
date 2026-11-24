@@ -11,7 +11,7 @@ Backend de Finance Balance, una aplicación personal de finanzas para Android. E
 
 ## Estado
 
-En desarrollo. Hoy solo están disponibles los endpoints de salud. El resto se agrega por fases.
+En desarrollo. Hoy están disponibles el registro de cuentas y el inicio de sesión por dispositivo. El resto se agrega por fases.
 
 ## Arquitectura
 
@@ -86,8 +86,10 @@ Swagger solo está disponible en desarrollo. En producción se desactiva.
 |--------|----------------------|-------------|
 | GET    | `/health`            | Indica si el gateway está activo. |
 | GET    | `/auth/health`       | Indica si el servicio de autenticación está activo. |
+| POST   | `/auth/register`     | Crea una cuenta con correo y contraseña (12 a 128 caracteres). `201`, o `409` si el correo ya existe. |
+| POST   | `/auth/sessions`     | Inicia sesión en un dispositivo (`device_id`, `device_name`). Devuelve el token de acceso (15 min) y el refresh token (90 días). `401` si las credenciales no son válidas. |
 
-Los endpoints de cuentas y sesiones se listarán aquí cuando estén implementados. Su detalle completo estará en Swagger.
+El detalle completo de cada endpoint está en Swagger y en el contrato `services/auth/openapi.json`.
 
 ## Pruebas
 
@@ -100,7 +102,17 @@ uv run ruff format --check .
 uv run pytest
 ```
 
-Las pruebas de integración usan PostgreSQL real, así que requieren Docker en ejecución.
+Las pruebas de integración usan PostgreSQL real y se omiten si no defines `TEST_DATABASE_URL` (en CI corren siempre, con cobertura mínima del 90 %). Esa base se vacía en cada prueba: no uses la de desarrollo.
+
+```bash
+TEST_DATABASE_URL=postgresql+psycopg://usuario:clave@localhost:5432/pruebas uv run pytest --cov
+```
+
+Si cambias la API a propósito, regenera el contrato y revísalo en el PR:
+
+```bash
+UPDATE_OPENAPI=1 uv run pytest services/auth/tests/contract
+```
 
 Para cambiar una dependencia de un servicio, edita su `services/<servicio>/pyproject.toml` y corre `uv lock` en la raíz. Sube `uv.lock` en el mismo commit.
 

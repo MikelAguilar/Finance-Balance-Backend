@@ -9,6 +9,7 @@ dev = [
     "httpx>=0.27,<1",
     "pip-audit>=2.10,<3",
     "pytest>=9.2.0,<10",
+    "pytest-cov>=7.1,<8",
     "ruff>=0.7,<1",
 ]
 
@@ -16,6 +17,15 @@ dev = [
 testpaths = ["services"]
 # Cada servicio tiene su carpeta tests/; importlib evita choques entre archivos con el mismo nombre.
 addopts = "--import-mode=importlib"
+markers = ["integration: necesita PostgreSQL real (variable TEST_DATABASE_URL)"]
+
+[tool.coverage.run]
+source = ["auth_service"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
 
 [tool.ruff]
 line-length = 100
