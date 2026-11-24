@@ -4,6 +4,7 @@ from uuid import uuid4
 import jwt
 import pytest
 
+from auth_service.domain.errors import InvalidToken
 from auth_service.infrastructure.security import Argon2PasswordHasher, JwtTokenService
 
 SECRET = "s" * 32
@@ -63,3 +64,45 @@ def test_refresh_token_aleatorio_y_su_hash_es_sha256() -> None:
     assert len(digest) == 64
     assert digest == tokens.hash_refresh_token(first)
     assert digest != tokens.hash_refresh_token(second)
+
+
+def test_leer_un_token_valido_devuelve_usuario_y_sesion() -> None:
+    tokens = JwtTokenService(SECRET, 15)
+    user_id, session_id = uuid4(), uuid4()
+    token, _ = tokens.issue_access_token(user_id, session_id, NOW)
+
+    assert tokens.decode_access_token(token, NOW + timedelta(minutes=14)) == (user_id, session_id)
+
+
+@pytest.mark.parametrize(
+    "token_factory",
+    [
+        pytest.param(lambda t: t + "x", id="firma alterada"),
+        pytest.param(lambda t: "no-es-un-jwt", id="basura"),
+        pytest.param(
+            lambda t: jwt.encode({"sub": str(uuid4()), "type": "access"}, SECRET),
+            id="sin sid ni exp",
+        ),
+        pytest.param(
+            lambda t: jwt.encode(
+                {"sub": str(uuid4()), "sid": str(uuid4()), "type": "refresh", "exp": 9999999999},
+                SECRET,
+            ),
+            id="tipo distinto",
+        ),
+    ],
+)
+def test_tokens_invalidos_se_rechazan(token_factory) -> None:
+    tokens = JwtTokenService(SECRET, 15)
+    good, _ = tokens.issue_access_token(uuid4(), uuid4(), NOW)
+
+    with pytest.raises(InvalidToken):
+        tokens.decode_access_token(token_factory(good), NOW)
+
+
+def test_token_vencido_se_rechaza_segun_el_reloj() -> None:
+    tokens = JwtTokenService(SECRET, 15)
+    token, expires_at = tokens.issue_access_token(uuid4(), uuid4(), NOW)
+
+    with pytest.raises(InvalidToken):
+        tokens.decode_access_token(token, expires_at)

@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from uuid import UUID
 
 from auth_service.domain.errors import WeakPassword
@@ -43,9 +43,18 @@ class Session:
     last_used_at: datetime
     expires_at: datetime
     revoked_at: datetime | None = None
+    # Hash del refresh token anterior: si alguien lo vuelve a usar, el token fue copiado.
+    previous_refresh_token_hash: str | None = None
 
     def is_active(self, now: datetime) -> bool:
         return self.revoked_at is None and now < self.expires_at
+
+    def rotate(self, new_refresh_token_hash: str, now: datetime, lifetime: timedelta) -> None:
+        """Cambia el refresh token y extiende la sesión desde este uso."""
+        self.previous_refresh_token_hash = self.refresh_token_hash
+        self.refresh_token_hash = new_refresh_token_hash
+        self.last_used_at = now
+        self.expires_at = now + lifetime
 
     def revoke(self, now: datetime) -> None:
         if self.revoked_at is None:

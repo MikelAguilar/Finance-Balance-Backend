@@ -11,7 +11,7 @@ Backend de Finance Balance, una aplicación personal de finanzas para Android. E
 
 ## Estado
 
-En desarrollo. Hoy están disponibles el registro de cuentas y el inicio de sesión por dispositivo. El resto se agrega por fases.
+En desarrollo. Hoy están disponibles el registro de cuentas, el inicio y cierre de sesión por dispositivo, la renovación de sesión y el cambio de contraseña. El resto se agrega por fases.
 
 ## Arquitectura
 
@@ -87,7 +87,10 @@ Swagger solo está disponible en desarrollo. En producción se desactiva.
 | GET    | `/health`            | Indica si el gateway está activo. |
 | GET    | `/auth/health`       | Indica si el servicio de autenticación está activo. |
 | POST   | `/auth/register`     | Crea una cuenta con correo y contraseña (12 a 128 caracteres). `201`, o `409` si el correo ya existe. |
-| POST   | `/auth/sessions`     | Inicia sesión en un dispositivo (`device_id`, `device_name`). Devuelve el token de acceso (15 min) y el refresh token (90 días). `401` si las credenciales no son válidas. |
+| POST   | `/auth/sessions`     | Inicia sesión en un dispositivo (`device_id`, `device_name`). Devuelve el token de acceso (15 min) y el refresh token (90 días). `401` si las credenciales no son válidas; `429` (con `Retry-After`) tras 5 fallos del mismo correo en 15 minutos. |
+| POST   | `/auth/sessions/refresh` | Entrega tokens nuevos a cambio del refresh token, que deja de servir. Reutilizar uno viejo cierra la sesión. `401` si no es válido. |
+| DELETE | `/auth/sessions/current` | Cierra la sesión de este dispositivo. Requiere `Authorization: Bearer <token de acceso>`. `204`. |
+| PUT    | `/auth/password` | Cambia la contraseña (pide la actual) y cierra los demás dispositivos. `204`; `403` si la actual no es correcta. |
 
 El detalle completo de cada endpoint está en Swagger y en el contrato `services/auth/openapi.json`.
 

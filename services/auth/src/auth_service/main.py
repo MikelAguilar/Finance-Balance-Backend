@@ -2,7 +2,14 @@ from functools import partial
 
 from fastapi import FastAPI
 
-from auth_service.application.use_cases import LogIn, RegisterUser
+from auth_service.application.use_cases import (
+    Authenticate,
+    ChangePassword,
+    LogIn,
+    LogOut,
+    RefreshSession,
+    RegisterUser,
+)
 from auth_service.config import Settings
 from auth_service.infrastructure.db import SystemClock, build_session_factory
 from auth_service.infrastructure.repositories import SqlUnitOfWork
@@ -32,7 +39,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     tokens = JwtTokenService(settings.jwt_secret.get_secret_value(), settings.access_token_minutes)
     clock = SystemClock()
     app.state.register_user = RegisterUser(uow_factory, hasher, clock)
-    app.state.log_in = LogIn(uow_factory, hasher, tokens, clock, settings.refresh_token_days)
+    app.state.log_in = LogIn(
+        uow_factory,
+        hasher,
+        tokens,
+        clock,
+        settings.refresh_token_days,
+        settings.login_max_attempts,
+        settings.login_window_minutes,
+    )
+    app.state.refresh_session = RefreshSession(
+        uow_factory, tokens, clock, settings.refresh_token_days
+    )
+    app.state.authenticate = Authenticate(uow_factory, tokens, clock)
+    app.state.change_password = ChangePassword(uow_factory, hasher, clock)
+    app.state.log_out = LogOut(uow_factory, clock)
 
     app.include_router(health_router)
     app.include_router(auth_router)

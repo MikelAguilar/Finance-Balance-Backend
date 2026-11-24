@@ -7,6 +7,10 @@ import jwt
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError
 
+from auth_service.domain.errors import InvalidToken
+
+_REQUIRED_CLAIMS = ["sub", "sid", "type", "exp"]
+
 
 class Argon2PasswordHasher:
     """Argon2id con los parámetros por defecto de argon2-cffi (recomendación RFC 9106)."""
@@ -45,6 +49,22 @@ class JwtTokenService:
             "exp": int(expires_at.timestamp()),
         }
         return jwt.encode(claims, self._secret, algorithm=self.ALGORITHM), expires_at
+
+    def decode_access_token(self, token: str, now: datetime) -> tuple[UUID, UUID]:
+        try:
+            # El vencimiento se compara con el reloj de la app (no con el de PyJWT) para que
+            # las pruebas puedan controlar el tiempo.
+            claims = jwt.decode(
+                token,
+                self._secret,
+                algorithms=[self.ALGORITHM],
+                options={"verify_exp": False, "verify_iat": False, "require": _REQUIRED_CLAIMS},
+            )
+            if claims["type"] != "access" or claims["exp"] <= now.timestamp():
+                raise InvalidToken()
+            return UUID(claims["sub"]), UUID(claims["sid"])
+        except (jwt.InvalidTokenError, ValueError) as error:
+            raise InvalidToken() from error
 
     def new_refresh_token(self) -> str:
         return secrets.token_urlsafe(32)

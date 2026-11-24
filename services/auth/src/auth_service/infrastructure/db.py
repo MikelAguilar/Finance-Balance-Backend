@@ -38,6 +38,7 @@ class SessionRow(Base):
     __table_args__ = (
         UniqueConstraint("refresh_token_hash", name="uq_sessions_refresh_token_hash"),
         Index("ix_auth_sessions_user_id", "user_id"),
+        Index("ix_auth_sessions_previous_refresh_token_hash", "previous_refresh_token_hash"),
         # Como máximo una sesión sin revocar por dispositivo de cada usuario.
         Index(
             "uq_sessions_user_device_unrevoked",
@@ -57,6 +58,18 @@ class SessionRow(Base):
     last_used_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    previous_refresh_token_hash: Mapped[str | None] = mapped_column(CHAR(64))
+
+
+class LoginAttemptRow(Base):
+    """Inicios de sesión fallidos, para el límite de intentos por correo."""
+
+    __tablename__ = "login_attempts"
+    __table_args__ = (Index("ix_auth_login_attempts_email_attempted_at", "email", "attempted_at"),)
+
+    id: Mapped[UUID] = mapped_column(primary_key=True)
+    email: Mapped[str] = mapped_column(String(254))
+    attempted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 def include_auth_schema(name: str | None, type_: str, parent_names: dict) -> bool:
