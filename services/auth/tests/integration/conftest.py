@@ -64,5 +64,7 @@ def settings(engine: Engine, database_url: str) -> Settings:
 
 
 @pytest.fixture
-def client(settings: Settings) -> TestClient:
-    return TestClient(create_app(settings))
+def client(settings: Settings) -> Iterator[TestClient]:
+    # Con «with», TestClient ejecuta el arranque y el apagado de la app (cierra sus conexiones).
+    with TestClient(create_app(settings)) as test_client:
+        yield test_client

@@ -20,7 +20,9 @@ NOW = datetime(2026, 11, 24, 12, 0, tzinfo=UTC)
 
 @pytest.fixture
 def uow_factory(settings):
-    return partial(SqlUnitOfWork, build_session_factory(settings.database_url))
+    session_factory = build_session_factory(settings.database_url)
+    yield partial(SqlUnitOfWork, session_factory)
+    session_factory.kw["bind"].dispose()
 
 
 def new_user(email="luis@example.com") -> User:

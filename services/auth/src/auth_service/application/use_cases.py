@@ -94,7 +94,9 @@ class LogIn:
                 retry_after = failures[0] + self._window - now
                 raise TooManyAttempts(math.ceil(retry_after.total_seconds()))
 
-            user = uow.users.get_by_email(email)
+            # Bloquea la cuenta: dos inicios simultáneos en el mismo dispositivo no deben crear
+            # dos sesiones activas (el índice único parcial lo rechazaría con un error).
+            user = uow.users.get_by_email(email, for_update=True)
             password_hash = user.password_hash if user else self._dummy_hash
             if not self._hasher.verify(password_hash, password) or user is None:
                 uow.login_attempts.add_failure(email, now)
@@ -140,7 +142,8 @@ class RefreshSession:
         now = self._clock.now()
         token_hash = self._tokens.hash_refresh_token(refresh_token)
         with self._uow_factory() as uow:
-            session = uow.sessions.get_by_refresh_hash(token_hash)
+            # Bloquea la sesión: si el mismo token llega dos veces a la vez, solo una gana.
+            session = uow.sessions.get_by_refresh_hash(token_hash, for_update=True)
             if session is None:
                 # Si es un refresh token que ya se cambió, alguien lo copió: se cierra la sesión
                 # para el ladrón y para el dueño, que deberá iniciar sesión otra vez.
@@ -199,7 +202,7 @@ class ChangePassword:
         check_password_policy(new_password)
         now = self._clock.now()
         with self._uow_factory() as uow:
-            user = uow.users.get(user_id)
+            user = uow.users.get(user_id, for_update=True)
             if user is None or not self._hasher.verify(user.password_hash, current_password):
                 raise WrongCurrentPassword()
             user.password_hash = self._hasher.hash(new_password)

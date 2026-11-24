@@ -275,3 +275,174 @@ def test_logout_of_missing_session_is_a_no_op(uow, clock):
     LogOut(lambda: uow, clock).execute(uuid4())
 
     assert uow.commits == 0
+
+
+# ------------------------------------------------------------------ límites exactos del bloqueo
+
+
+def test_a_failure_exactly_one_window_old_no_longer_counts(user, log_in, clock):
+    for _ in range(5):
+        fail(log_in)
+    clock.advance(timedelta(minutes=15))  # justo el instante en que vence la ventana
+
+    assert start(log_in).access_token
+
+
+def test_one_second_before_the_window_ends_it_is_still_blocked(user, log_in, clock):
+    for _ in range(5):
+        fail(log_in)
+    clock.advance(timedelta(minutes=15) - timedelta(seconds=1))
+
+    with pytest.raises(TooManyAttempts) as error:
+        start(log_in)
+    assert error.value.retry_after_seconds == 1
+
+
+def test_retry_after_is_rounded_up_never_to_zero(user, log_in, clock):
+    for _ in range(5):
+        fail(log_in)
+    clock.advance(timedelta(minutes=15) - timedelta(milliseconds=200))
+
+    with pytest.raises(TooManyAttempts) as error:
+        start(log_in)
+    assert error.value.retry_after_seconds == 1
+
+
+def test_blocked_attempts_are_not_recorded_and_do_not_extend_the_block(user, log_in, uow, clock):
+    for _ in range(5):
+        fail(log_in)
+    for _ in range(10):
+        with pytest.raises(TooManyAttempts):
+            log_in.execute(EMAIL, "contraseña equivocada", "pixel-8-abc", "Teléfono")
+
+    assert len(uow.login_attempts.failures) == 5
+    clock.advance(timedelta(minutes=15))
+    assert start(log_in).access_token
+
+
+def test_failures_of_one_email_do_not_block_another(user, log_in, uow, hasher, clock):
+    RegisterUser(lambda: uow, hasher, clock).execute("otra@example.com", PASSWORD)
+    for _ in range(5):
+        fail(log_in)
+
+    assert log_in.execute("otra@example.com", PASSWORD, "pixel-8-abc", "Tel").access_token
+
+
+def test_email_case_and_spaces_do_not_bypass_the_limit(user, log_in):
+    for variant in [
+        "luis@example.com",
+        "LUIS@example.com",
+        " Luis@Example.COM ",
+        "luis@EXAMPLE.com",
+        "luis@example.com",
+    ]:
+        fail(log_in, variant)
+
+    with pytest.raises(TooManyAttempts):
+        log_in.execute("Luis@example.com", PASSWORD, "pixel-8-abc", "Teléfono")
+
+
+def test_a_limit_of_one_attempt_blocks_after_the_first_failure(user, uow, hasher, tokens, clock):
+    strict = LogIn(
+        lambda: uow, hasher, tokens, clock, refresh_token_days=90, max_attempts=1, window_minutes=1
+    )
+    with pytest.raises(InvalidCredentials):
+        strict.execute(EMAIL, "contraseña equivocada", "pixel-8-abc", "Tel")
+
+    with pytest.raises(TooManyAttempts) as error:
+        strict.execute(EMAIL, PASSWORD, "pixel-8-abc", "Tel")
+    assert error.value.retry_after_seconds == 60
+
+
+# ------------------------------------------------------------------ casos raros de sesiones
+
+
+def test_refresh_at_the_exact_expiry_instant_is_rejected(user, log_in, refresh, clock):
+    first = start(log_in)
+    clock.advance(timedelta(days=90))
+
+    with pytest.raises(InvalidToken):
+        refresh.execute(first.refresh_token)
+
+
+def test_refresh_one_second_before_expiry_still_works(user, log_in, refresh, clock):
+    first = start(log_in)
+    clock.advance(timedelta(days=90) - timedelta(seconds=1))
+
+    assert refresh.execute(first.refresh_token).refresh_token
+
+
+def test_reusing_a_token_two_rotations_old_is_rejected_without_closing_the_session(
+    user, log_in, refresh, uow, clock
+):
+    # Solo se guarda el hash inmediatamente anterior: uno más viejo es simplemente desconocido.
+    first = start(log_in)
+    second = refresh.execute(first.refresh_token)
+    third = refresh.execute(second.refresh_token)
+
+    with pytest.raises(InvalidToken):
+        refresh.execute(first.refresh_token)
+
+    assert uow.sessions.items[0].is_active(clock.now())
+    assert refresh.execute(third.refresh_token).refresh_token
+
+
+def test_reuse_on_one_device_does_not_affect_another_device(user, log_in, refresh, uow, clock):
+    phone = start(log_in, "pixel-8-abc")
+    tablet = start(log_in, "tablet-xyz")
+    refresh.execute(phone.refresh_token)
+
+    with pytest.raises(InvalidToken):
+        refresh.execute(phone.refresh_token)
+
+    assert refresh.execute(tablet.refresh_token).refresh_token
+
+
+def test_access_token_still_works_after_refresh_until_it_expires(
+    user, log_in, refresh, authenticate
+):
+    # El token de acceso anterior no se revoca al renovar: vence solo a los 15 minutos. La sesión
+    # sigue activa, así que es correcto.
+    first = start(log_in)
+    refresh.execute(first.refresh_token)
+
+    assert authenticate.execute(first.access_token).session_id == first.session_id
+
+
+def test_a_valid_token_of_another_users_session_is_rejected(
+    user, log_in, authenticate, uow, hasher, clock, tokens
+):
+    RegisterUser(lambda: uow, hasher, clock).execute("otra@example.com", PASSWORD)
+    other = log_in.execute("otra@example.com", PASSWORD, "pixel-8-abc", "Tel")
+    mine = start(log_in)
+    # Token firmado correctamente, pero con el sid de otra persona.
+    forged, _ = tokens.issue_access_token(user.id, other.session_id, clock.now())
+
+    with pytest.raises(InvalidToken):
+        authenticate.execute(forged)
+    assert authenticate.execute(mine.access_token).user_id == user.id
+
+
+def test_changing_password_to_the_same_one_is_allowed_and_still_closes_other_devices(
+    user, log_in, uow, hasher, clock
+):
+    phone = start(log_in, "pixel-8-abc")
+    start(log_in, "tablet-xyz")
+
+    ChangePassword(lambda: uow, hasher, clock).execute(
+        user.id, phone.session_id, PASSWORD, PASSWORD
+    )
+
+    assert [s.revoked_at is None for s in uow.sessions.items] == [True, False]
+
+
+def test_logout_twice_keeps_the_first_revocation_time(user, log_in, uow, clock):
+    phone = start(log_in)
+    logout = LogOut(lambda: uow, clock)
+    logout.execute(phone.session_id)
+    first_time = uow.sessions.items[0].revoked_at
+    clock.advance(timedelta(minutes=5))
+
+    logout.execute(phone.session_id)
+
+    assert uow.sessions.items[0].revoked_at == first_time

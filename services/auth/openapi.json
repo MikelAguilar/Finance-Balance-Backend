@@ -276,6 +276,7 @@
             "title": "New Password"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "current_password",
@@ -347,6 +348,7 @@
             "title": "Device Name"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "email",
@@ -364,6 +366,7 @@
             "title": "Refresh Token"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "refresh_token"
@@ -383,6 +386,7 @@
             "title": "Password"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "email",

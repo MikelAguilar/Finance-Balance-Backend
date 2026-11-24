@@ -1,3 +1,5 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from functools import partial
 
 from fastapi import FastAPI
@@ -22,8 +24,16 @@ from auth_service.interfaces.http.security_headers import add_security_headers
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings()
     is_development = settings.app_env == "development"
+    session_factory = build_session_factory(settings.database_url)
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        yield
+        # Al apagar la app se cierran las conexiones abiertas con PostgreSQL.
+        session_factory.kw["bind"].dispose()
 
     app = FastAPI(
+        lifespan=lifespan,
         title="Finance Balance API",
         version="0.1.0",
         docs_url="/docs" if is_development else None,
@@ -34,7 +44,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # Composición: aquí se eligen las implementaciones concretas de cada puerto. El motor de
     # base de datos no se conecta hasta la primera consulta.
-    uow_factory = partial(SqlUnitOfWork, build_session_factory(settings.database_url))
+    uow_factory = partial(SqlUnitOfWork, session_factory)
     hasher = Argon2PasswordHasher()
     tokens = JwtTokenService(settings.jwt_secret.get_secret_value(), settings.access_token_minutes)
     clock = SystemClock()

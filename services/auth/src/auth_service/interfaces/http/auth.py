@@ -6,7 +6,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import AfterValidator, BaseModel, ConfigDict, EmailStr, Field, StringConstraints
 
 from auth_service.application.use_cases import (
     AuthContext,
@@ -34,8 +34,38 @@ router = APIRouter(tags=["auth"])
 bearer = HTTPBearer(auto_error=False)
 
 
-class RegisterRequest(BaseModel):
-    email: EmailStr
+def _without_nul(value: str) -> str:
+    # PostgreSQL no admite el carácter nulo en textos: se rechaza aquí con 422 y no con un 500.
+    if "\x00" in value:
+        raise ValueError("El texto no puede contener el carácter nulo.")
+    return value
+
+
+def _email_limits(value: str) -> str:
+    # RFC 5321: parte local de hasta 64 caracteres y correo completo de hasta 254.
+    local, _, _ = value.rpartition("@")
+    if len(local) > 64 or len(value) > 254:
+        raise ValueError("El correo es demasiado largo.")
+    return value
+
+
+Email = Annotated[EmailStr, AfterValidator(_email_limits)]
+# Se recortan los espacios de los extremos: «   » queda vacío y se rechaza.
+DeviceText = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=100),
+    AfterValidator(_without_nul),
+]
+
+
+class StrictRequest(BaseModel):
+    """Base de los cuerpos de entrada: un campo desconocido es un error de quien llama."""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class RegisterRequest(StrictRequest):
+    email: Email
     # El mínimo lo valida el dominio; el máximo aquí evita procesar textos enormes.
     password: str = Field(max_length=MAX_PASSWORD_LENGTH)
 
@@ -46,18 +76,18 @@ class UserResponse(BaseModel):
     created_at: datetime
 
 
-class LoginRequest(BaseModel):
-    email: EmailStr
+class LoginRequest(StrictRequest):
+    email: Email
     password: str = Field(max_length=MAX_PASSWORD_LENGTH)
-    device_id: str = Field(min_length=1, max_length=100)
-    device_name: str = Field(min_length=1, max_length=100)
+    device_id: DeviceText
+    device_name: DeviceText
 
 
-class RefreshRequest(BaseModel):
+class RefreshRequest(StrictRequest):
     refresh_token: str = Field(max_length=200)
 
 
-class ChangePasswordRequest(BaseModel):
+class ChangePasswordRequest(StrictRequest):
     current_password: str = Field(max_length=MAX_PASSWORD_LENGTH)
     new_password: str = Field(max_length=MAX_PASSWORD_LENGTH)
 

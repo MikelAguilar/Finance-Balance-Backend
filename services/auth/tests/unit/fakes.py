@@ -65,10 +65,10 @@ class FakeUsers:
     def __init__(self) -> None:
         self.by_email: dict[str, User] = {}
 
-    def get(self, user_id: UUID) -> User | None:
+    def get(self, user_id: UUID, *, for_update: bool = False) -> User | None:
         return next((u for u in self.by_email.values() if u.id == user_id), None)
 
-    def get_by_email(self, email: str) -> User | None:
+    def get_by_email(self, email: str, *, for_update: bool = False) -> User | None:
         return self.by_email.get(email)
 
     def add(self, user: User) -> None:
@@ -85,7 +85,7 @@ class FakeSessions:
     def get(self, session_id: UUID) -> Session | None:
         return next((s for s in self.items if s.id == session_id), None)
 
-    def get_by_refresh_hash(self, token_hash: str) -> Session | None:
+    def get_by_refresh_hash(self, token_hash: str, *, for_update: bool = False) -> Session | None:
         return next((s for s in self.items if s.refresh_token_hash == token_hash), None)
 
     def get_by_previous_refresh_hash(self, token_hash: str) -> Session | None:

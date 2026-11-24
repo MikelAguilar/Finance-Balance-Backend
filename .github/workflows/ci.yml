@@ -31,6 +31,8 @@ jobs:
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run pytest
+        env:
+          HYPOTHESIS_PROFILE: ci
 
   seguridad:
     runs-on: ubuntu-latest
@@ -87,6 +89,8 @@ jobs:
       - run: uv sync --locked --all-packages
       # Todas las pruebas (unitarias, de integración y de contrato) con cobertura mínima del 90 %.
       - run: uv run pytest --cov --cov-fail-under=90
+        env:
+          HYPOTHESIS_PROFILE: ci
 
   docker:
     needs: [calidad, seguridad, integracion]
@@ -115,6 +119,12 @@ jobs:
           renewed=$(curl --fail -X POST "$api/sessions/refresh" -H "$json" -d "{\"refresh_token\": \"$refresh\"}")
           access=$(echo "$renewed" | jq -r .access_token)
           curl --fail -X DELETE "$api/sessions/current" -H "Authorization: Bearer $access"
+      # El gateway rechaza cuerpos de más de 1 MB.
+      - name: Cuerpo demasiado grande → 413
+        run: |
+          head -c 2000000 /dev/zero | tr '\0' 'a' > grande.json
+          code=$(curl -s -o /dev/null -w "%{http_code}" -X POST http://localhost:8000/auth/register \n            -H "Content-Type: application/json" --data-binary @grande.json)
+          test "$code" = "413"
       - if: failure()
         run: docker compose logs
       - if: always()
