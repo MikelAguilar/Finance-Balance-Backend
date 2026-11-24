@@ -13,3 +13,6 @@ class Settings(BaseSettings):
     jwt_secret: SecretStr = Field(min_length=32)
     access_token_minutes: int = Field(default=15, gt=0)
     refresh_token_days: int = Field(default=90, gt=0)
+    # Límite de intentos: tras este número de fallos en la ventana, el correo queda bloqueado.
+    login_max_attempts: int = Field(default=5, gt=0)
+    login_window_minutes: int = Field(default=15, gt=0)

@@ -55,7 +55,7 @@ def clean_tables(request: pytest.FixtureRequest) -> Iterator[None]:
     yield
     if "engine" in request.fixturenames:
         with request.getfixturevalue("engine").begin() as connection:
-            connection.execute(text("TRUNCATE auth.users CASCADE"))
+            connection.execute(text("TRUNCATE auth.users, auth.login_attempts CASCADE"))
 
 
 @pytest.fixture

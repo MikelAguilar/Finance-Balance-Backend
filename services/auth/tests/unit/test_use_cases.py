@@ -32,7 +32,15 @@ def register(uow, hasher, clock) -> RegisterUser:
 
 @pytest.fixture
 def log_in(uow, hasher, clock) -> LogIn:
-    return LogIn(lambda: uow, hasher, FakeTokens(), clock, refresh_token_days=90)
+    return LogIn(
+        lambda: uow,
+        hasher,
+        FakeTokens(),
+        clock,
+        refresh_token_days=90,
+        max_attempts=5,
+        window_minutes=15,
+    )
 
 
 def test_registrar_guarda_el_usuario_con_hash_y_correo_normalizado(register, uow, clock) -> None:
@@ -67,7 +75,7 @@ def test_iniciar_sesion_crea_una_sesion_y_devuelve_tokens(register, log_in, uow,
 
     [session] = uow.sessions.items
     assert result.session_id == session.id
-    assert result.access_token == f"access:{user.id}:{session.id}"
+    assert result.access_token.startswith(f"access:{user.id}:{session.id}:")
     assert result.access_token_expires_at == clock.now() + timedelta(minutes=15)
     assert result.refresh_token == "refresh-1"
     assert result.refresh_token_expires_at == clock.now() + timedelta(days=90)

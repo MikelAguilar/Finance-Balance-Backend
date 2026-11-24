@@ -102,10 +102,19 @@ jobs:
       - run: curl --fail http://localhost:8000/auth/health
       # Swagger (activo en desarrollo) debe funcionar detrás del gateway, con el prefijo /auth.
       - run: curl --fail http://localhost:8000/auth/openapi.json
-      # Registro e inicio de sesión de punta a punta: gateway → servicio → PostgreSQL.
-      - run: |
-          curl --fail -X POST http://localhost:8000/auth/register -H "Content-Type: application/json"             -d '{"email": "ci@example.com", "password": "contraseña de prueba de CI"}'
-          curl --fail -X POST http://localhost:8000/auth/sessions -H "Content-Type: application/json"             -d '{"email": "ci@example.com", "password": "contraseña de prueba de CI", "device_id": "ci", "device_name": "CI"}'
+      # Flujo de cuenta de punta a punta: gateway → servicio → PostgreSQL.
+      - name: Registro, inicio de sesión, renovación y cierre de sesión
+        run: |
+          api=http://localhost:8000/auth
+          json="Content-Type: application/json"
+          curl --fail -X POST "$api/register" -H "$json" \
+            -d '{"email": "ci@example.com", "password": "contraseña de prueba de CI"}'
+          tokens=$(curl --fail -X POST "$api/sessions" -H "$json" \
+            -d '{"email": "ci@example.com", "password": "contraseña de prueba de CI", "device_id": "ci", "device_name": "CI"}')
+          refresh=$(echo "$tokens" | jq -r .refresh_token)
+          renewed=$(curl --fail -X POST "$api/sessions/refresh" -H "$json" -d "{\"refresh_token\": \"$refresh\"}")
+          access=$(echo "$renewed" | jq -r .access_token)
+          curl --fail -X DELETE "$api/sessions/current" -H "Authorization: Bearer $access"
       - if: failure()
         run: docker compose logs
       - if: always()

@@ -3,6 +3,7 @@
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
+from auth_service.domain.errors import InvalidToken
 from auth_service.domain.model import Session, User
 
 
@@ -32,13 +33,25 @@ class FakeHasher:
 
 
 class FakeTokens:
+    """Tokens legibles: «access:<usuario>:<sesión>:<vencimiento>»."""
+
     def __init__(self) -> None:
         self._counter = 0
 
     def issue_access_token(
         self, user_id: UUID, session_id: UUID, now: datetime
     ) -> tuple[str, datetime]:
-        return f"access:{user_id}:{session_id}", now + timedelta(minutes=15)
+        expires_at = now + timedelta(minutes=15)
+        return f"access:{user_id}:{session_id}:{expires_at.timestamp()}", expires_at
+
+    def decode_access_token(self, token: str, now: datetime) -> tuple[UUID, UUID]:
+        try:
+            kind, user_id, session_id, expires = token.split(":")
+            if kind != "access" or float(expires) <= now.timestamp():
+                raise InvalidToken()
+            return UUID(user_id), UUID(session_id)
+        except ValueError as error:
+            raise InvalidToken() from error
 
     def new_refresh_token(self) -> str:
         self._counter += 1
@@ -51,6 +64,9 @@ class FakeTokens:
 class FakeUsers:
     def __init__(self) -> None:
         self.by_email: dict[str, User] = {}
+
+    def get(self, user_id: UUID) -> User | None:
+        return next((u for u in self.by_email.values() if u.id == user_id), None)
 
     def get_by_email(self, email: str) -> User | None:
         return self.by_email.get(email)
@@ -66,6 +82,15 @@ class FakeSessions:
     def add(self, session: Session) -> None:
         self.items.append(session)
 
+    def get(self, session_id: UUID) -> Session | None:
+        return next((s for s in self.items if s.id == session_id), None)
+
+    def get_by_refresh_hash(self, token_hash: str) -> Session | None:
+        return next((s for s in self.items if s.refresh_token_hash == token_hash), None)
+
+    def get_by_previous_refresh_hash(self, token_hash: str) -> Session | None:
+        return next((s for s in self.items if s.previous_refresh_token_hash == token_hash), None)
+
     def list_unrevoked_for_device(self, user_id: UUID, device_id: str) -> list[Session]:
         return [
             s
@@ -73,11 +98,29 @@ class FakeSessions:
             if s.user_id == user_id and s.device_id == device_id and s.revoked_at is None
         ]
 
+    def list_unrevoked_for_user(self, user_id: UUID) -> list[Session]:
+        return [s for s in self.items if s.user_id == user_id and s.revoked_at is None]
+
+
+class FakeLoginAttempts:
+    def __init__(self) -> None:
+        self.failures: list[tuple[str, datetime]] = []
+
+    def add_failure(self, email: str, at: datetime) -> None:
+        self.failures.append((email, at))
+
+    def list_failures_since(self, email: str, since: datetime) -> list[datetime]:
+        return sorted(at for e, at in self.failures if e == email and at > since)
+
+    def clear(self, email: str) -> None:
+        self.failures = [(e, at) for e, at in self.failures if e != email]
+
 
 class FakeUnitOfWork:
     def __init__(self) -> None:
         self.users = FakeUsers()
         self.sessions = FakeSessions()
+        self.login_attempts = FakeLoginAttempts()
         self.commits = 0
 
     def __enter__(self) -> "FakeUnitOfWork":
