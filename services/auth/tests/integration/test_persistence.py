@@ -52,6 +52,24 @@ def test_saved_user_round_trips(uow_factory) -> None:
         assert uow.users.get_by_email("luis@example.com") == user
 
 
+def test_profile_name_round_trips_and_can_be_cleared(uow_factory) -> None:
+    user = new_user()
+    with uow_factory() as uow:
+        uow.users.add(user)
+        uow.commit()
+
+    with uow_factory() as uow:
+        uow.users.get(user.id).name = "Luis 🙂"
+        uow.commit()
+    with uow_factory() as uow:
+        stored = uow.users.get(user.id)
+        assert stored.name == "Luis 🙂"
+        stored.name = None
+        uow.commit()
+    with uow_factory() as uow:
+        assert uow.users.get(user.id).name is None
+
+
 def test_nothing_is_saved_without_commit(uow_factory) -> None:
     with uow_factory() as uow:
         uow.users.add(new_user())

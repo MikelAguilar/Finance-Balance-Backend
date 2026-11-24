@@ -91,6 +91,12 @@ Swagger solo está disponible en desarrollo. En producción se desactiva.
 | POST   | `/auth/sessions/refresh` | Entrega tokens nuevos a cambio del refresh token, que deja de servir. Reutilizar uno viejo cierra la sesión. `401` si no es válido. |
 | DELETE | `/auth/sessions/current` | Cierra la sesión de este dispositivo. Requiere `Authorization: Bearer <token de acceso>`. `204`. |
 | PUT    | `/auth/password` | Cambia la contraseña (pide la actual) y cierra los demás dispositivos. `204`; `403` si la actual no es correcta. |
+| GET    | `/auth/me` | Perfil de la cuenta: id, correo, nombre y fecha de alta. |
+| PATCH  | `/auth/me` | Cambia el nombre (1 a 100 caracteres, sin caracteres de control); `"name": null` lo borra. Solo acepta `name`. |
+| GET    | `/auth/sessions` | Dispositivos con sesión activa, del uso más reciente al más antiguo; `current` marca este dispositivo. |
+| DELETE | `/auth/sessions/{id}` | Cierra la sesión de otro dispositivo (o de este). `204`, también si ya estaba cerrada; `404` si no existe o es de otra cuenta. |
+
+Los endpoints de `/auth/me`, `/auth/sessions` (GET y DELETE) y `/auth/password` requieren `Authorization: Bearer <token de acceso>`.
 
 El detalle completo de cada endpoint está en Swagger y en el contrato `services/auth/openapi.json`.
 

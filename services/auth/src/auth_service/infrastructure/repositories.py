@@ -18,7 +18,7 @@ from auth_service.domain.errors import EmailAlreadyRegistered
 from auth_service.domain.model import Session, User
 from auth_service.infrastructure.db import LoginAttemptRow, SessionRow, UserRow
 
-_USER_FIELDS = ("id", "email", "password_hash", "created_at")
+_USER_FIELDS = ("id", "email", "password_hash", "created_at", "name")
 _SESSION_FIELDS = (
     "id",
     "user_id",
@@ -89,8 +89,8 @@ class SqlSessionRepository:
         self._db.flush()
         self._db.add(self._tracker.to_row(SessionRow, session))
 
-    def get(self, session_id: UUID) -> Session | None:
-        row = self._db.get(SessionRow, session_id)
+    def get(self, session_id: UUID, *, for_update: bool = False) -> Session | None:
+        row = self._db.get(SessionRow, session_id, with_for_update=for_update)
         return None if row is None else self._tracker.to_entity(Session, row)
 
     def get_by_refresh_hash(self, token_hash: str, *, for_update: bool = False) -> Session | None:

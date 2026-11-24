@@ -1,5 +1,6 @@
 """Endpoints de cuentas y sesiones. El gateway los publica bajo /auth."""
 
+import unicodedata
 from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
@@ -12,21 +13,26 @@ from auth_service.application.use_cases import (
     AuthContext,
     Authenticate,
     ChangePassword,
+    GetProfile,
+    ListSessions,
     LogIn,
     LoginResult,
     LogOut,
     RefreshSession,
     RegisterUser,
+    RevokeSession,
+    UpdateProfile,
 )
 from auth_service.domain.errors import (
     EmailAlreadyRegistered,
     InvalidCredentials,
     InvalidToken,
+    SessionNotFound,
     TooManyAttempts,
     WeakPassword,
     WrongCurrentPassword,
 )
-from auth_service.domain.model import MAX_PASSWORD_LENGTH
+from auth_service.domain.model import MAX_PASSWORD_LENGTH, Session, User
 
 router = APIRouter(tags=["auth"])
 
@@ -34,10 +40,11 @@ router = APIRouter(tags=["auth"])
 bearer = HTTPBearer(auto_error=False)
 
 
-def _without_nul(value: str) -> str:
-    # PostgreSQL no admite el carácter nulo en textos: se rechaza aquí con 422 y no con un 500.
-    if "\x00" in value:
-        raise ValueError("El texto no puede contener el carácter nulo.")
+def _without_control_characters(value: str) -> str:
+    # Caracteres de control (nulo, tabulador, \x1f…): no se ven en pantalla y PostgreSQL no
+    # admite el nulo (sería un error 500). Se rechazan aquí con 422.
+    if any(unicodedata.category(character) == "Cc" for character in value):
+        raise ValueError("El texto no puede contener caracteres de control.")
     return value
 
 
@@ -51,10 +58,10 @@ def _email_limits(value: str) -> str:
 
 Email = Annotated[EmailStr, AfterValidator(_email_limits)]
 # Se recortan los espacios de los extremos: «   » queda vacío y se rechaza.
-DeviceText = Annotated[
+ShortText = Annotated[
     str,
     StringConstraints(strip_whitespace=True, min_length=1, max_length=100),
-    AfterValidator(_without_nul),
+    AfterValidator(_without_control_characters),
 ]
 
 
@@ -79,8 +86,8 @@ class UserResponse(BaseModel):
 class LoginRequest(StrictRequest):
     email: Email
     password: str = Field(max_length=MAX_PASSWORD_LENGTH)
-    device_id: DeviceText
-    device_name: DeviceText
+    device_id: ShortText
+    device_name: ShortText
 
 
 class RefreshRequest(StrictRequest):
@@ -108,6 +115,44 @@ class TokenResponse(BaseModel):
             refresh_token=result.refresh_token,
             refresh_token_expires_at=result.refresh_token_expires_at,
             session_id=result.session_id,
+        )
+
+
+class ProfileResponse(BaseModel):
+    id: UUID
+    email: str
+    name: str | None
+    created_at: datetime
+
+    @classmethod
+    def from_user(cls, user: User) -> "ProfileResponse":
+        return cls(id=user.id, email=user.email, name=user.name, created_at=user.created_at)
+
+
+class UpdateProfileRequest(StrictRequest):
+    """Solo cambia lo que se envía. `"name": null` borra el nombre."""
+
+    name: ShortText | None = None
+
+
+class SessionResponse(BaseModel):
+    id: UUID
+    device_name: str
+    created_at: datetime
+    last_used_at: datetime
+    expires_at: datetime
+    # Para que la app marque «Este dispositivo» y no ofrezca cerrarlo desde la lista.
+    current: bool
+
+    @classmethod
+    def from_session(cls, session: Session, current_session_id: UUID) -> "SessionResponse":
+        return cls(
+            id=session.id,
+            device_name=session.device_name,
+            created_at=session.created_at,
+            last_used_at=session.last_used_at,
+            expires_at=session.expires_at,
+            current=session.id == current_session_id,
         )
 
 
@@ -156,6 +201,22 @@ def get_change_password(request: Request) -> ChangePassword:
 
 def get_log_out(request: Request) -> LogOut:
     return request.app.state.log_out
+
+
+def get_get_profile(request: Request) -> GetProfile:
+    return request.app.state.get_profile
+
+
+def get_update_profile(request: Request) -> UpdateProfile:
+    return request.app.state.update_profile
+
+
+def get_list_sessions(request: Request) -> ListSessions:
+    return request.app.state.list_sessions
+
+
+def get_revoke_session(request: Request) -> RevokeSession:
+    return request.app.state.revoke_session
 
 
 UNAUTHORIZED = {401: {"model": ErrorResponse}}
@@ -212,10 +273,66 @@ def refresh(
         raise unauthorized("Refresh token inválido, vencido o ya usado.") from error
 
 
+@router.get("/sessions", response_model=list[SessionResponse], responses=UNAUTHORIZED)
+def list_sessions(
+    session: CurrentSession, use_case: Annotated[ListSessions, Depends(get_list_sessions)]
+) -> list[SessionResponse]:
+    return [
+        SessionResponse.from_session(item, session.session_id)
+        for item in use_case.execute(session.user_id)
+    ]
+
+
+# Va antes de /sessions/{session_id}: FastAPI prueba las rutas en orden.
 @router.delete("/sessions/current", status_code=status.HTTP_204_NO_CONTENT, responses=UNAUTHORIZED)
 def log_out(session: CurrentSession, use_case: Annotated[LogOut, Depends(get_log_out)]) -> Response:
     use_case.execute(session.session_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.delete(
+    "/sessions/{session_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={**UNAUTHORIZED, 404: {"model": ErrorResponse}},
+)
+def revoke_session(
+    session_id: UUID,
+    session: CurrentSession,
+    use_case: Annotated[RevokeSession, Depends(get_revoke_session)],
+) -> Response:
+    try:
+        use_case.execute(session.user_id, session_id)
+    except SessionNotFound as error:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "La sesión no existe.") from error
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/me", response_model=ProfileResponse, responses=UNAUTHORIZED)
+def get_profile(
+    session: CurrentSession, use_case: Annotated[GetProfile, Depends(get_get_profile)]
+) -> ProfileResponse:
+    try:
+        return ProfileResponse.from_user(use_case.execute(session.user_id))
+    except InvalidToken as error:
+        raise unauthorized("La cuenta ya no existe.") from error
+
+
+@router.patch("/me", response_model=ProfileResponse, responses=UNAUTHORIZED)
+def update_profile(
+    body: UpdateProfileRequest,
+    session: CurrentSession,
+    get_use_case: Annotated[GetProfile, Depends(get_get_profile)],
+    update_use_case: Annotated[UpdateProfile, Depends(get_update_profile)],
+) -> ProfileResponse:
+    try:
+        # Un cuerpo vacío ({}) no cambia nada: se devuelve el perfil tal como está.
+        if "name" in body.model_fields_set:
+            user = update_use_case.execute(session.user_id, body.name)
+        else:
+            user = get_use_case.execute(session.user_id)
+    except InvalidToken as error:
+        raise unauthorized("La cuenta ya no existe.") from error
+    return ProfileResponse.from_user(user)
 
 
 @router.put(

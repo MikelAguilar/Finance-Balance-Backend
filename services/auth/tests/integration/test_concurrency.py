@@ -13,7 +13,14 @@ from functools import partial
 
 import pytest
 
-from auth_service.application.use_cases import LogIn, RefreshSession, RegisterUser
+from auth_service.application.use_cases import (
+    ListSessions,
+    LogIn,
+    RefreshSession,
+    RegisterUser,
+    RevokeSession,
+    UpdateProfile,
+)
 from auth_service.domain.errors import EmailAlreadyRegistered, InvalidToken
 from auth_service.infrastructure.db import SystemClock, build_session_factory
 from auth_service.infrastructure.repositories import SqlUnitOfWork
@@ -34,6 +41,9 @@ def services(settings):
         "register": RegisterUser(uow, hasher, clock),
         "log_in": LogIn(uow, hasher, tokens, clock, 90, max_attempts=5, window_minutes=15),
         "refresh": RefreshSession(uow, tokens, clock, 90),
+        "revoke": RevokeSession(uow, clock),
+        "update_profile": UpdateProfile(uow),
+        "list_sessions": ListSessions(uow, clock),
         "uow": uow,
     }
     session_factory.kw["bind"].dispose()
@@ -120,3 +130,62 @@ def test_many_simultaneous_wrong_passwords_end_up_blocking_the_email(services):
 
     with pytest.raises(TooManyAttempts):
         services["log_in"].execute("luis@example.com", PASSWORD, "d", "d")
+
+
+def test_closing_the_same_device_many_times_at_once_always_succeeds(services):
+    user = services["register"].execute("luis@example.com", PASSWORD)
+    tablet = services["log_in"].execute("luis@example.com", PASSWORD, "tableta", "Tableta")
+
+    results = run_at_once(lambda: services["revoke"].execute(user.id, tablet.session_id))
+
+    assert kinds(results) == Counter({"ok": THREADS})
+    with services["uow"]() as uow:
+        assert uow.sessions.get(tablet.session_id).revoked_at is not None
+
+
+@pytest.mark.parametrize("round_", range(10))
+def test_closing_a_device_while_it_refreshes_never_leaves_it_open(services, round_):
+    user = services["register"].execute("luis@example.com", PASSWORD)
+    tablet = services["log_in"].execute("luis@example.com", PASSWORD, "tableta", "Tableta")
+    actions = iter(
+        [
+            lambda: services["revoke"].execute(user.id, tablet.session_id),
+            lambda: services["refresh"].execute(tablet.refresh_token),
+        ]
+    )
+    lock = threading.Lock()
+
+    def next_action():
+        with lock:
+            action = next(actions)
+        return action()
+
+    results = run_at_once(next_action, times=2)
+
+    # Gane quien gane: cerrar siempre funciona, la renovación funciona o da InvalidToken, y al
+    # final la sesión queda cerrada (también el refresh token nuevo, si se llegó a emitir).
+    assert set(kinds(results)) <= {"ok", InvalidToken.__name__}
+    with services["uow"]() as uow:
+        assert uow.sessions.get(tablet.session_id).revoked_at is not None
+    assert services["list_sessions"].execute(user.id) == []
+    renewed = [r for r in results if r is not None and not isinstance(r, Exception)]
+    for result in renewed:
+        with pytest.raises(InvalidToken):
+            services["refresh"].execute(result.refresh_token)
+
+
+def test_simultaneous_name_changes_keep_exactly_one_of_them(services):
+    user = services["register"].execute("luis@example.com", PASSWORD)
+    names = iter(f"Nombre {i}" for i in range(THREADS))
+    lock = threading.Lock()
+
+    def rename():
+        with lock:
+            name = next(names)
+        return services["update_profile"].execute(user.id, name).name
+
+    results = run_at_once(rename)
+
+    assert kinds(results) == Counter({"ok": THREADS})
+    with services["uow"]() as uow:
+        assert uow.users.get(user.id).name in results

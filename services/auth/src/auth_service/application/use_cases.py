@@ -9,6 +9,7 @@ from auth_service.domain.errors import (
     EmailAlreadyRegistered,
     InvalidCredentials,
     InvalidToken,
+    SessionNotFound,
     TooManyAttempts,
     WrongCurrentPassword,
 )
@@ -220,7 +221,70 @@ class LogOut:
 
     def execute(self, session_id: UUID) -> None:
         with self._uow_factory() as uow:
-            session = uow.sessions.get(session_id)
+            session = uow.sessions.get(session_id, for_update=True)
             if session is not None:
+                session.revoke(self._clock.now())
+                uow.commit()
+
+
+class GetProfile:
+    def __init__(self, uow_factory: Callable[[], UnitOfWork]) -> None:
+        self._uow_factory = uow_factory
+
+    def execute(self, user_id: UUID) -> User:
+        with self._uow_factory() as uow:
+            user = uow.users.get(user_id)
+        # La cuenta pudo borrarse entre la verificación del token y esta consulta.
+        if user is None:
+            raise InvalidToken()
+        return user
+
+
+class UpdateProfile:
+    def __init__(self, uow_factory: Callable[[], UnitOfWork]) -> None:
+        self._uow_factory = uow_factory
+
+    def execute(self, user_id: UUID, name: str | None) -> User:
+        """`name=None` borra el nombre."""
+        with self._uow_factory() as uow:
+            user = uow.users.get(user_id, for_update=True)
+            if user is None:
+                raise InvalidToken()
+            user.name = name
+            uow.commit()
+        return user
+
+
+class ListSessions:
+    """Dispositivos con sesión activa, del uso más reciente al más antiguo."""
+
+    def __init__(self, uow_factory: Callable[[], UnitOfWork], clock: Clock) -> None:
+        self._uow_factory = uow_factory
+        self._clock = clock
+
+    def execute(self, user_id: UUID) -> list[Session]:
+        now = self._clock.now()
+        with self._uow_factory() as uow:
+            sessions = uow.sessions.list_unrevoked_for_user(user_id)
+        active = [session for session in sessions if session.is_active(now)]
+        # El id desempata para que el orden sea el mismo en cada consulta.
+        return sorted(active, key=lambda s: (s.last_used_at, s.created_at, str(s.id)), reverse=True)
+
+
+class RevokeSession:
+    """Cierra la sesión de un dispositivo del mismo usuario."""
+
+    def __init__(self, uow_factory: Callable[[], UnitOfWork], clock: Clock) -> None:
+        self._uow_factory = uow_factory
+        self._clock = clock
+
+    def execute(self, user_id: UUID, session_id: UUID) -> None:
+        with self._uow_factory() as uow:
+            session = uow.sessions.get(session_id, for_update=True)
+            # Una sesión ajena responde igual que una inexistente: no revela que existe.
+            if session is None or session.user_id != user_id:
+                raise SessionNotFound()
+            # Cerrar una sesión ya cerrada o vencida no es un error: el resultado es el mismo.
+            if session.revoked_at is None:
                 session.revoke(self._clock.now())
                 uow.commit()

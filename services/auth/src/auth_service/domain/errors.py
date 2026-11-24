@@ -22,6 +22,10 @@ class WrongCurrentPassword(DomainError):
     pass
 
 
+class SessionNotFound(DomainError):
+    """La sesión no existe o es de otro usuario: a propósito no se distingue cuál."""
+
+
 class TooManyAttempts(DomainError):
     def __init__(self, retry_after_seconds: int) -> None:
         super().__init__(f"Demasiados intentos. Intenta de nuevo en {retry_after_seconds} s.")

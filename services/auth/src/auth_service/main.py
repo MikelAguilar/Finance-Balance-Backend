@@ -7,10 +7,14 @@ from fastapi import FastAPI
 from auth_service.application.use_cases import (
     Authenticate,
     ChangePassword,
+    GetProfile,
+    ListSessions,
     LogIn,
     LogOut,
     RefreshSession,
     RegisterUser,
+    RevokeSession,
+    UpdateProfile,
 )
 from auth_service.config import Settings
 from auth_service.infrastructure.db import SystemClock, build_session_factory
@@ -64,6 +68,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.authenticate = Authenticate(uow_factory, tokens, clock)
     app.state.change_password = ChangePassword(uow_factory, hasher, clock)
     app.state.log_out = LogOut(uow_factory, clock)
+    app.state.get_profile = GetProfile(uow_factory)
+    app.state.update_profile = UpdateProfile(uow_factory)
+    app.state.list_sessions = ListSessions(uow_factory, clock)
+    app.state.revoke_session = RevokeSession(uow_factory, clock)
 
     app.include_router(health_router)
     app.include_router(auth_router)

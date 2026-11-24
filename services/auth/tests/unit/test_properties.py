@@ -4,6 +4,7 @@ Si la encuentra, la reduce al caso más simple y la muestra.
 """
 
 import string
+import unicodedata
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
@@ -11,6 +12,7 @@ import jwt
 import pytest
 from hypothesis import assume, given
 from hypothesis import strategies as st
+from pydantic import ValidationError
 
 from auth_service.domain.errors import InvalidToken, WeakPassword
 from auth_service.domain.model import (
@@ -21,6 +23,7 @@ from auth_service.domain.model import (
     normalize_email,
 )
 from auth_service.infrastructure.security import JwtTokenService
+from auth_service.interfaces.http.auth import UpdateProfileRequest
 
 SECRET = "s" * 32
 TOKENS = JwtTokenService(SECRET, access_token_minutes=15)
@@ -204,3 +207,22 @@ def test_new_refresh_tokens_do_not_repeat() -> None:
     generated = {TOKENS.new_refresh_token() for _ in range(5000)}
 
     assert len(generated) == 5000
+
+
+@given(st.text(max_size=150))
+def test_accepted_profile_names_are_trimmed_short_and_without_control_characters(
+    text: str,
+) -> None:
+    def has_control(value: str) -> bool:
+        return any(unicodedata.category(c) == "Cc" for c in value)
+
+    try:
+        name = UpdateProfileRequest(name=text).name
+    except ValidationError:
+        # Solo se rechaza lo que de verdad incumple una regla.
+        stripped = text.strip()
+        assert not stripped or len(stripped) > 100 or has_control(text)
+        return
+    assert name == text.strip()
+    assert 1 <= len(name) <= 100
+    assert not has_control(name)
