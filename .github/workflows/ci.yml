@@ -123,7 +123,8 @@ jobs:
       - name: Cuerpo demasiado grande → 413
         run: |
           head -c 2000000 /dev/zero | tr '\0' 'a' > grande.json
-          code=$(curl -s -o /dev/null -w "%{http_code}" -X POST http://localhost:8000/auth/register \n            -H "Content-Type: application/json" --data-binary @grande.json)
+          code=$(curl -s -o /dev/null -w "%{http_code}" -X POST http://localhost:8000/auth/register \
+            -H "Content-Type: application/json" --data-binary @grande.json)
           test "$code" = "413"
       - if: failure()
         run: docker compose logs
