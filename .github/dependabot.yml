@@ -19,9 +19,17 @@ updates:
     directory: "/services/auth"
     schedule:
       interval: "weekly"
+    ignore:
+      # Python se queda en 3.12 (decisión del proyecto); solo se aceptan parches de la imagen.
+      - dependency-name: "python"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
 
   # Imágenes de docker-compose.yml (PostgreSQL y Caddy).
   - package-ecosystem: "docker-compose"
     directory: "/"
     schedule:
       interval: "weekly"
+    ignore:
+      # Cambiar de versión mayor de PostgreSQL exige migrar los datos: se hace a mano, con plan.
+      - dependency-name: "postgres"
+        update-types: ["version-update:semver-major"]
