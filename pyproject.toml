@@ -1,23 +1,7 @@
-[build-system]
-requires = ["setuptools>=77"]
-build-backend = "setuptools.build_meta"
-
-[project]
-name = "finance-balance-backend"
-version = "0.1.0"
-description = "Backend de Finance Balance"
-readme = "README.md"
-license = "MIT"
-requires-python = ">=3.12"
-dependencies = [
-    "fastapi>=0.115,<1",
-    "pydantic>=2.9,<3",
-    "pydantic-settings>=2.6,<3",
-    "sqlalchemy>=2.0,<3",
-    "alembic>=1.13,<2",
-    "psycopg[binary]>=3.2,<4",
-    "uvicorn>=0.32,<1",
-]
+# Raíz del workspace: no es un paquete. Cada servicio vive en services/<nombre>/ con su
+# propio pyproject.toml, y todos comparten este uv.lock y las herramientas de desarrollo.
+[tool.uv.workspace]
+members = ["services/*"]
 
 [dependency-groups]
 dev = [
@@ -28,11 +12,10 @@ dev = [
     "ruff>=0.7,<1",
 ]
 
-[tool.setuptools.packages.find]
-include = ["app*"]
-
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["services"]
+# Cada servicio tiene su carpeta tests/; importlib evita choques entre archivos con el mismo nombre.
+addopts = "--import-mode=importlib"
 
 [tool.ruff]
 line-length = 100
@@ -43,3 +26,6 @@ select = ["E", "F", "I", "B", "UP"]
 
 [tool.bandit]
 exclude_dirs = ["tests", ".venv"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["auth_service"]

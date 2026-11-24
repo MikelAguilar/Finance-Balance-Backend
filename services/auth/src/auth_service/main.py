@@ -1,8 +1,8 @@
 from fastapi import FastAPI
 
-from app.config import Settings
-from app.interfaces.http.health import router as health_router
-from app.interfaces.http.seguridad import agregar_cabeceras_de_seguridad
+from auth_service.config import Settings
+from auth_service.interfaces.http.health import router as health_router
+from auth_service.interfaces.http.seguridad import agregar_cabeceras_de_seguridad
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:

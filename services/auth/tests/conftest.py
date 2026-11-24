@@ -3,8 +3,8 @@ from collections.abc import Callable
 import pytest
 from fastapi.testclient import TestClient
 
-from app.config import Settings
-from app.main import create_app
+from auth_service.config import Settings
+from auth_service.main import create_app
 
 DATABASE_URL = "postgresql+psycopg://test:test@localhost:5432/test"
 

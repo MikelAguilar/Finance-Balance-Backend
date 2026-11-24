@@ -16,6 +16,12 @@ updates:
       interval: "weekly"
 
   - package-ecosystem: "docker"
+    directory: "/services/auth"
+    schedule:
+      interval: "weekly"
+
+  # Imágenes de docker-compose.yml (PostgreSQL y Caddy).
+  - package-ecosystem: "docker-compose"
     directory: "/"
     schedule:
       interval: "weekly"
