@@ -1,18 +1,5 @@
-from fastapi.testclient import TestClient
-
-from app.config import Settings
-from app.main import create_app
-
-DATABASE_URL = "postgresql+psycopg://test:test@localhost:5432/test"
-
-
-def build_client(app_env: str) -> TestClient:
-    settings = Settings(app_env=app_env, database_url=DATABASE_URL)
-    return TestClient(create_app(settings))
-
-
-def test_health_responde_ok() -> None:
-    client = build_client("development")
+def test_health_responde_ok(crear_cliente) -> None:
+    client = crear_cliente("development")
 
     response = client.get("/health")
 
@@ -20,15 +7,15 @@ def test_health_responde_ok() -> None:
     assert response.json() == {"status": "ok"}
 
 
-def test_swagger_disponible_en_desarrollo() -> None:
-    client = build_client("development")
+def test_swagger_disponible_en_desarrollo(crear_cliente) -> None:
+    client = crear_cliente("development")
 
     assert client.get("/docs").status_code == 200
     assert client.get("/openapi.json").status_code == 200
 
 
-def test_swagger_desactivado_en_produccion() -> None:
-    client = build_client("production")
+def test_swagger_desactivado_en_produccion(crear_cliente) -> None:
+    client = crear_cliente("production")
 
     assert client.get("/docs").status_code == 404
     assert client.get("/openapi.json").status_code == 404

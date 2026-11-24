@@ -17,7 +17,7 @@ En desarrollo. Hoy solo está disponible el endpoint de salud. El resto se agreg
 
 - [Git](https://git-scm.com/)
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) (o Docker Engine en Linux)
-- Python 3.12 o superior, solo si vas a correr las pruebas fuera de Docker
+- Python 3.12 o superior y [uv](https://docs.astral.sh/uv/), solo si vas a correr las pruebas fuera de Docker
 
 ## Cómo correrlo
 
@@ -63,14 +63,33 @@ Los endpoints de cuentas y sesiones se listarán aquí cuando estén implementad
 
 ## Pruebas
 
+Las versiones exactas de todas las librerías están en `uv.lock`. Instálalas y corre las revisiones:
+
 ```bash
-pytest
+uv sync --locked
+uv run ruff check .
+uv run ruff format --check .
+uv run pytest
 ```
 
 Las pruebas de integración usan PostgreSQL real, así que requieren Docker en ejecución.
 
+Para cambiar una dependencia, edita `pyproject.toml` y corre `uv lock`. Sube `uv.lock` en el mismo commit.
+
+## Seguridad
+
+CI corre en cada push, en cada PR y cada lunes:
+
+- **Bandit:** busca patrones de código inseguro en `app/`.
+- **pip-audit:** compara las versiones de `uv.lock` con la base pública de vulnerabilidades conocidas.
+- **gitleaks:** busca secretos en todo el historial de git.
+
+Dependabot abre cada semana PRs que actualizan `uv.lock`, las acciones de CI y la imagen de Docker.
+
+La API responde con cabeceras de seguridad (`nosniff`, `DENY`, `no-referrer`, `no-store`). En producción agrega además HSTS y Content-Security-Policy. No habilita CORS: la app Android no lo necesita, y así ningún sitio web puede llamar a la API desde un navegador.
+
 ## Stack
 
-**Backend:** Python 3.12 · FastAPI · Pydantic v2 · SQLAlchemy 2 · Alembic · PostgreSQL · Docker Compose · pytest · ruff
+**Backend:** Python 3.12 · FastAPI · Pydantic v2 · SQLAlchemy 2 · Alembic · PostgreSQL · Docker Compose · uv · pytest · ruff · Bandit · pip-audit · gitleaks
 
 **Cliente Android:** Kotlin · Jetpack Compose · Material 3 · Hilt · Room · DataStore · Coroutines y Flow · BiometricPrompt
