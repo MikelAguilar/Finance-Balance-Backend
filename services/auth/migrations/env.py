@@ -1,7 +1,7 @@
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-from app.config import Settings
+from auth_service.config import Settings
 
 target_metadata = None
 

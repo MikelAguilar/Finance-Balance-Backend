@@ -27,7 +27,7 @@ jobs:
           version: "0.13.9"
           python-version: "3.12"
           enable-cache: true
-      - run: uv sync --locked
+      - run: uv sync --locked --all-packages
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run pytest
@@ -44,12 +44,12 @@ jobs:
           version: "0.13.9"
           python-version: "3.12"
           enable-cache: true
-      - run: uv sync --locked
-      - name: Bandit (código inseguro en app/)
-        run: uv run bandit -c pyproject.toml -r app
+      - run: uv sync --locked --all-packages
+      - name: Bandit (código inseguro en los servicios)
+        run: uv run bandit -c pyproject.toml -r services
       - name: pip-audit (vulnerabilidades conocidas en las versiones de uv.lock)
         run: |
-          uv export --locked --no-dev --no-emit-project --format requirements-txt -o requisitos.txt
+          uv export --locked --no-dev --all-packages --no-emit-workspace --format requirements-txt -o requisitos.txt
           uv run pip-audit --strict --disable-pip -r requisitos.txt
       - name: gitleaks (secretos en el historial)
         uses: gitleaks/gitleaks-action@v2
@@ -66,7 +66,11 @@ jobs:
       # Valores de ejemplo: la base de datos solo existe durante esta ejecución.
       - run: cp .env.example .env
       - run: docker compose up --build -d --wait
+      # Por el gateway: /health es del gateway y /auth/health llega al servicio de autenticación.
       - run: curl --fail --retry 15 --retry-delay 2 --retry-all-errors http://localhost:8000/health
+      - run: curl --fail http://localhost:8000/auth/health
+      # Swagger (activo en desarrollo) debe funcionar detrás del gateway, con el prefijo /auth.
+      - run: curl --fail http://localhost:8000/auth/openapi.json
       - if: failure()
         run: docker compose logs
       - if: always()
