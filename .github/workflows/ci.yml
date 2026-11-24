@@ -52,7 +52,7 @@ jobs:
           uv export --locked --no-dev --all-packages --no-emit-workspace --format requirements-txt -o requisitos.txt
           uv run pip-audit --strict --disable-pip -r requisitos.txt
       - name: gitleaks (secretos en el historial)
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_ENABLE_COMMENTS: false
