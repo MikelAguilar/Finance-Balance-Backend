@@ -7,6 +7,11 @@
 }
 
 :8080 {
+	# Un cuerpo de más de 1 MB se rechaza con 413 antes de llegar a los servicios.
+	request_body {
+		max_size 1MB
+	}
+
 	# handle_path quita el prefijo: /auth/health llega al servicio como /health.
 	handle_path /auth/* {
 		reverse_proxy auth:8000

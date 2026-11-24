@@ -1,5 +1,5 @@
-def test_health_responde_ok(crear_cliente) -> None:
-    client = crear_cliente("development")
+def test_health_returns_ok(make_client) -> None:
+    client = make_client("development")
 
     response = client.get("/health")
 
@@ -7,15 +7,15 @@ def test_health_responde_ok(crear_cliente) -> None:
     assert response.json() == {"status": "ok"}
 
 
-def test_swagger_disponible_en_desarrollo(crear_cliente) -> None:
-    client = crear_cliente("development")
+def test_swagger_available_in_development(make_client) -> None:
+    client = make_client("development")
 
     assert client.get("/docs").status_code == 200
     assert client.get("/openapi.json").status_code == 200
 
 
-def test_swagger_desactivado_en_produccion(crear_cliente) -> None:
-    client = crear_cliente("production")
+def test_swagger_disabled_in_production(make_client) -> None:
+    client = make_client("production")
 
     assert client.get("/docs").status_code == 404
     assert client.get("/openapi.json").status_code == 404
