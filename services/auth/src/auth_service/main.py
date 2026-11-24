@@ -16,7 +16,7 @@ from auth_service.infrastructure.repositories import SqlUnitOfWork
 from auth_service.infrastructure.security import Argon2PasswordHasher, JwtTokenService
 from auth_service.interfaces.http.auth import router as auth_router
 from auth_service.interfaces.http.health import router as health_router
-from auth_service.interfaces.http.seguridad import agregar_cabeceras_de_seguridad
+from auth_service.interfaces.http.security_headers import add_security_headers
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -30,7 +30,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         redoc_url=None,
         openapi_url="/openapi.json" if is_development else None,
     )
-    agregar_cabeceras_de_seguridad(app, produccion=not is_development)
+    add_security_headers(app, production=not is_development)
 
     # Composición: aquí se eligen las implementaciones concretas de cada puerto. El motor de
     # base de datos no se conecta hasta la primera consulta.

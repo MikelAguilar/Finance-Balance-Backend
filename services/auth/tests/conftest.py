@@ -12,9 +12,9 @@ JWT_SECRET = "pruebas" * 6
 
 
 @pytest.fixture
-def crear_cliente() -> Callable[[str], TestClient]:
-    def _crear(app_env: str) -> TestClient:
+def make_client() -> Callable[[str], TestClient]:
+    def _make(app_env: str) -> TestClient:
         settings = Settings(app_env=app_env, database_url=DATABASE_URL, jwt_secret=JWT_SECRET)
         return TestClient(create_app(settings))
 
-    return _crear
+    return _make

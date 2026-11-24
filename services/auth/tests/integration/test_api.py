@@ -29,7 +29,7 @@ def sessions_in_db(engine):
         ).all()
 
 
-def test_registro_crea_la_cuenta(client, engine) -> None:
+def test_register_creates_account(client, engine) -> None:
     response = register(client, email="Luis@Example.com")
 
     assert response.status_code == 201
@@ -41,7 +41,7 @@ def test_registro_crea_la_cuenta(client, engine) -> None:
     assert stored.startswith("$argon2id$")
 
 
-def test_registro_con_correo_repetido_responde_409(client) -> None:
+def test_register_duplicate_email_returns_409(client) -> None:
     register(client)
 
     response = register(client, email="LUIS@example.com")
@@ -49,18 +49,18 @@ def test_registro_con_correo_repetido_responde_409(client) -> None:
     assert response.status_code == 409
 
 
-def test_registro_con_correo_invalido_responde_422(client) -> None:
+def test_register_invalid_email_returns_422(client) -> None:
     assert register(client, email="no-es-un-correo").status_code == 422
 
 
-def test_registro_con_contrasena_corta_responde_422_con_el_motivo(client) -> None:
+def test_register_short_password_returns_422_with_reason(client) -> None:
     response = register(client, password="corta")
 
     assert response.status_code == 422
     assert "12" in response.json()["detail"]
 
 
-def test_inicio_de_sesion_devuelve_tokens_y_guarda_solo_el_hash(client, engine) -> None:
+def test_login_returns_tokens_and_stores_only_the_hash(client, engine) -> None:
     user_id = register(client).json()["id"]
 
     response = log_in(client)
@@ -78,7 +78,7 @@ def test_inicio_de_sesion_devuelve_tokens_y_guarda_solo_el_hash(client, engine) 
     assert revoked_at is None
 
 
-def test_credenciales_incorrectas_no_revelan_si_el_correo_existe(client) -> None:
+def test_invalid_credentials_do_not_reveal_registered_emails(client) -> None:
     register(client)
 
     wrong_password = log_in(client, password="otra contraseña larga")
@@ -89,7 +89,7 @@ def test_credenciales_incorrectas_no_revelan_si_el_correo_existe(client) -> None
     assert wrong_password.headers["WWW-Authenticate"] == "Bearer"
 
 
-def test_nuevo_inicio_en_el_mismo_dispositivo_revoca_la_sesion_anterior(client, engine) -> None:
+def test_new_login_on_same_device_revokes_previous_session(client, engine) -> None:
     register(client)
     log_in(client)
 
@@ -100,7 +100,7 @@ def test_nuevo_inicio_en_el_mismo_dispositivo_revoca_la_sesion_anterior(client, 
     assert second.revoked_at is None
 
 
-def test_inicio_en_otro_dispositivo_mantiene_las_dos_sesiones(client, engine) -> None:
+def test_login_on_another_device_keeps_both_sessions(client, engine) -> None:
     register(client)
     log_in(client)
 

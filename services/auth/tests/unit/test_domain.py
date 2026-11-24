@@ -29,36 +29,36 @@ def make_session(**overrides) -> Session:
     return Session(**(values | overrides))
 
 
-def test_el_correo_se_guarda_en_minusculas_y_sin_espacios() -> None:
+def test_email_is_lowercased_and_trimmed() -> None:
     assert normalize_email("  Luis@Example.COM ") == "luis@example.com"
 
 
 @pytest.mark.parametrize("length", [MIN_PASSWORD_LENGTH, MAX_PASSWORD_LENGTH])
-def test_contrasena_en_los_limites_es_valida(length: int) -> None:
+def test_password_at_length_limits_is_valid(length: int) -> None:
     check_password_policy("x" * length)
 
 
 @pytest.mark.parametrize("length", [MIN_PASSWORD_LENGTH - 1, MAX_PASSWORD_LENGTH + 1])
-def test_contrasena_fuera_de_los_limites_se_rechaza(length: int) -> None:
+def test_password_outside_length_limits_is_rejected(length: int) -> None:
     with pytest.raises(WeakPassword):
         check_password_policy("x" * length)
 
 
-def test_la_contrasena_no_exige_simbolos() -> None:
+def test_password_does_not_require_symbols() -> None:
     check_password_policy("solo letras y espacios")
 
 
-def test_sesion_nueva_esta_activa() -> None:
+def test_new_session_is_active() -> None:
     assert make_session().is_active(NOW)
 
 
-def test_sesion_vencida_no_esta_activa() -> None:
+def test_expired_session_is_not_active() -> None:
     session = make_session(expires_at=NOW)
 
     assert not session.is_active(NOW)
 
 
-def test_sesion_revocada_no_esta_activa() -> None:
+def test_revoked_session_is_not_active() -> None:
     session = make_session()
 
     session.revoke(NOW)
@@ -67,7 +67,7 @@ def test_sesion_revocada_no_esta_activa() -> None:
     assert not session.is_active(NOW)
 
 
-def test_revocar_dos_veces_conserva_la_primera_fecha() -> None:
+def test_revoking_twice_keeps_first_date() -> None:
     session = make_session()
     session.revoke(NOW)
 

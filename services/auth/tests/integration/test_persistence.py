@@ -40,7 +40,7 @@ def new_session(user_id, device_id="pixel-8-abc") -> Session:
     )
 
 
-def test_el_usuario_guardado_se_recupera_igual(uow_factory) -> None:
+def test_saved_user_round_trips(uow_factory) -> None:
     user = new_user()
     with uow_factory() as uow:
         uow.users.add(user)
@@ -50,7 +50,7 @@ def test_el_usuario_guardado_se_recupera_igual(uow_factory) -> None:
         assert uow.users.get_by_email("luis@example.com") == user
 
 
-def test_sin_commit_no_se_guarda_nada(uow_factory) -> None:
+def test_nothing_is_saved_without_commit(uow_factory) -> None:
     with uow_factory() as uow:
         uow.users.add(new_user())
 
@@ -58,7 +58,7 @@ def test_sin_commit_no_se_guarda_nada(uow_factory) -> None:
         assert uow.users.get_by_email("luis@example.com") is None
 
 
-def test_correo_duplicado_en_carrera_se_traduce_a_error_del_dominio(uow_factory) -> None:
+def test_duplicate_email_race_becomes_domain_error(uow_factory) -> None:
     # Simula dos registros simultáneos: los dos pasaron la verificación previa.
     with uow_factory() as uow:
         uow.users.add(new_user())
@@ -69,7 +69,7 @@ def test_correo_duplicado_en_carrera_se_traduce_a_error_del_dominio(uow_factory)
         uow.commit()
 
 
-def test_la_base_impide_dos_sesiones_sin_revocar_en_el_mismo_dispositivo(uow_factory) -> None:
+def test_database_forbids_two_unrevoked_sessions_per_device(uow_factory) -> None:
     user = new_user()
     with uow_factory() as uow:
         uow.users.add(user)
@@ -81,7 +81,7 @@ def test_la_base_impide_dos_sesiones_sin_revocar_en_el_mismo_dispositivo(uow_fac
         uow.commit()
 
 
-def test_revocar_y_crear_en_la_misma_transaccion_funciona(uow_factory) -> None:
+def test_revoke_and_create_in_same_transaction(uow_factory) -> None:
     user = new_user()
     with uow_factory() as uow:
         uow.users.add(user)
@@ -98,7 +98,7 @@ def test_revocar_y_crear_en_la_misma_transaccion_funciona(uow_factory) -> None:
         assert len(uow.sessions.list_unrevoked_for_device(user.id, "pixel-8-abc")) == 1
 
 
-def test_los_modelos_coinciden_con_las_migraciones(engine) -> None:
+def test_models_match_migrations(engine) -> None:
     with engine.connect() as connection:
         context = MigrationContext.configure(
             connection,
@@ -107,6 +107,6 @@ def test_los_modelos_coinciden_con_las_migraciones(engine) -> None:
         assert compare_metadata(context, Base.metadata) == []
 
 
-def test_las_migraciones_se_pueden_revertir_y_reaplicar(alembic_config, engine) -> None:
+def test_migrations_downgrade_and_upgrade(alembic_config, engine) -> None:
     command.downgrade(alembic_config, "base")
     command.upgrade(alembic_config, "head")
