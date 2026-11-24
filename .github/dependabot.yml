@@ -1,0 +1,21 @@
+# Dependabot abre PRs que actualizan uv.lock, las acciones de CI y la imagen base.
+# Cada PR pasa por CI (incluida la revisión de seguridad) antes de que Luis lo fusione.
+version: 2
+updates:
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      dependencias:
+        patterns: ["*"]
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"

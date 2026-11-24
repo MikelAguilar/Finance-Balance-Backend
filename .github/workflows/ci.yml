@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Cada lunes revisa de nuevo las versiones fijadas: aparecen vulnerabilidades aunque nadie cambie código.
+  schedule:
+    - cron: "0 13 * * 1"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -18,17 +22,43 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: astral-sh/setup-uv@v7
         with:
+          version: "0.13.9"
           python-version: "3.12"
-          cache: pip
-      - run: pip install -e ".[dev]"
-      - run: ruff check .
-      - run: ruff format --check .
-      - run: pytest
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run pytest
+
+  seguridad:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # gitleaks revisa todo el historial, no solo el último commit
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.13.9"
+          python-version: "3.12"
+          enable-cache: true
+      - run: uv sync --locked
+      - name: Bandit (código inseguro en app/)
+        run: uv run bandit -c pyproject.toml -r app
+      - name: pip-audit (vulnerabilidades conocidas en las versiones de uv.lock)
+        run: |
+          uv export --locked --no-dev --no-emit-project --format requirements-txt -o requisitos.txt
+          uv run pip-audit --strict --disable-pip -r requisitos.txt
+      - name: gitleaks (secretos en el historial)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_ENABLE_COMMENTS: false
 
   docker:
-    needs: calidad
+    needs: [calidad, seguridad]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

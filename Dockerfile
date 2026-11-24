@@ -1,16 +1,26 @@
 FROM python:3.12-slim
 
+COPY --from=ghcr.io/astral-sh/uv:0.13.9 /uv /bin/uv
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    UV_NO_CACHE=1 \
+    UV_PROJECT_ENVIRONMENT=/opt/venv \
+    PATH="/opt/venv/bin:$PATH"
 
 RUN useradd --create-home --uid 1000 appuser
 
 WORKDIR /app
 
-COPY pyproject.toml README.md ./
+# Primero solo las dependencias: esta capa se reutiliza mientras uv.lock no cambie.
+COPY pyproject.toml uv.lock ./
+RUN uv sync --locked --no-dev --no-install-project
+
+COPY README.md ./
 COPY app ./app
-RUN pip install .
+RUN uv sync --locked --no-dev --no-editable
 
 COPY alembic.ini ./
 COPY migrations ./migrations
