@@ -133,6 +133,23 @@ def test_revoke_and_create_in_same_transaction(uow_factory) -> None:
         assert len(uow.sessions.list_unrevoked_for_device(user.id, "pixel-8-abc")) == 1
 
 
+def test_unrevoked_sessions_of_a_user_leave_out_the_closed_ones(uow_factory) -> None:
+    # Nada se borra nunca: las sesiones cerradas se acumulan. Esta lista no debe cargarlas.
+    user = new_user()
+    open_session, closed_session = new_session(user.id, "abierta"), new_session(user.id, "cerrada")
+    closed_session.revoke(NOW)
+    with uow_factory() as uow:
+        uow.users.add(user)
+        uow.sessions.add(open_session)
+        uow.sessions.add(closed_session)
+        uow.commit()
+
+    with uow_factory() as uow:
+        sessions = uow.sessions.list_unrevoked_for_user(user.id)
+
+    assert [session.id for session in sessions] == [open_session.id]
+
+
 def test_models_match_migrations(engine) -> None:
     with engine.connect() as connection:
         context = MigrationContext.configure(
@@ -140,6 +157,24 @@ def test_models_match_migrations(engine) -> None:
             opts={"include_schemas": True, "include_name": include_auth_schema},
         )
         assert compare_metadata(context, Base.metadata) == []
+
+
+def test_migrations_ignore_the_schemas_of_other_services(engine) -> None:
+    # Finanzas usa la misma base con su propio esquema. Las migraciones de autenticación no deben
+    # proponer tocarlo (por ejemplo, borrar sus tablas por no conocerlas).
+    with engine.begin() as connection:
+        connection.execute(text("CREATE SCHEMA otro_servicio"))
+        connection.execute(text("CREATE TABLE otro_servicio.registros (id integer PRIMARY KEY)"))
+    try:
+        with engine.connect() as connection:
+            context = MigrationContext.configure(
+                connection,
+                opts={"include_schemas": True, "include_name": include_auth_schema},
+            )
+            assert compare_metadata(context, Base.metadata) == []
+    finally:
+        with engine.begin() as connection:
+            connection.execute(text("DROP SCHEMA otro_servicio CASCADE"))
 
 
 def test_migrations_downgrade_and_upgrade(alembic_config, engine) -> None:
