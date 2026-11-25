@@ -168,6 +168,31 @@ jobs:
           # El correo queda libre para una cuenta nueva.
           curl --fail -X POST "$api/register" -H "$json" \
             -d "$body, \"first_name\": \"Nueva\", \"last_name\": \"Cuenta\"}"
+      # /finance/* solo pasa con una sesión activa: el gateway la verifica con auth en cada petición.
+      - name: Finanzas solo con sesión activa
+        run: |
+          api=http://localhost:8000
+          json="Content-Type: application/json"
+          status() { curl -s -o /dev/null -w "%{http_code}" "$@"; }
+          body='{"email": "finanzas@example.com", "password": "contraseña de prueba de CI"'
+          curl --fail -X POST "$api/auth/register" -H "$json" \
+            -d "$body, \"first_name\": \"Finanzas\", \"last_name\": \"de CI\"}"
+          access=$(curl --fail -X POST "$api/auth/sessions" -H "$json" \
+            -d "$body, \"device_id\": \"ci\", \"device_name\": \"CI\"}" | jq -r .access_token)
+          # Sin token, con un token inventado o con una cabecera de usuario falsa: 401.
+          test "$(status "$api/finance/health")" = "401"
+          test "$(status "$api/finance/health" -H "Authorization: Bearer inventado")" = "401"
+          test "$(status "$api/finance/health" -H "X-User-Id: 00000000-0000-0000-0000-000000000001")" = "401"
+          # Con sesión activa pasa.
+          curl --fail "$api/finance/health" -H "Authorization: Bearer $access" | jq -e '.status == "ok"'
+          # Swagger de finanzas (solo en desarrollo) funciona sin token, con el prefijo /finance.
+          curl --fail "$api/finance/openapi.json" | jq -e '.info.title'
+          curl --fail "$api/finance/docs" | grep -q "/finance/openapi.json"
+          # La verificación es solo interna: desde fuera no existe.
+          test "$(status "$api/auth/verify" -H "Authorization: Bearer $access")" = "404"
+          # Al cerrar la sesión, finanzas deja de responder a ese token.
+          curl --fail -X DELETE "$api/auth/sessions/current" -H "Authorization: Bearer $access"
+          test "$(status "$api/finance/health" -H "Authorization: Bearer $access")" = "401"
       # El gateway rechaza cuerpos de más de 1 MB.
       - name: Cuerpo demasiado grande → 413
         run: |
