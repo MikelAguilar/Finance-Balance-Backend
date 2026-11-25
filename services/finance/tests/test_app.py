@@ -14,6 +14,12 @@ def test_finance_is_built_on_the_common_service_app(make_client) -> None:
     assert "Strict-Transport-Security" in production.get("/health").headers
 
 
-def test_unknown_environment_is_rejected() -> None:
+def test_unknown_environment_is_rejected(make_settings) -> None:
     with pytest.raises(ValidationError):
-        Settings(app_env="staging")
+        make_settings(app_env="staging")
+
+
+def test_database_url_is_required(monkeypatch) -> None:
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    with pytest.raises(ValidationError, match="database_url"):
+        Settings(_env_file=None)
