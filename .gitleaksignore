@@ -1,0 +1,3 @@
+# Falsos positivos revisados a mano. Formato: commit:archivo:regla:línea.
+# Token inventado a propósito en la prueba de humo de finanzas (ya no es un literal desde el commit siguiente).
+3f92a27b0ec7e129352836ec619061c25365c29c:.github/workflows/ci.yml:curl-auth-header:180

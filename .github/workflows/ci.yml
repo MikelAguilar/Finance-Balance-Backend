@@ -225,7 +225,8 @@ jobs:
             -d "$body, \"device_id\": \"ci\", \"device_name\": \"CI\"}" | jq -r .access_token)
           # Sin token, con un token inventado o con una cabecera de usuario falsa: 401.
           test "$(status "$api/finance/health")" = "401"
-          test "$(status "$api/finance/health" -H "Authorization: Bearer inventado")" = "401"
+          fake="token-inventado"
+          test "$(status "$api/finance/health" -H "Authorization: Bearer $fake")" = "401"
           test "$(status "$api/finance/health" -H "X-User-Id: 00000000-0000-0000-0000-000000000001")" = "401"
           # Con sesión activa pasa.
           curl --fail "$api/finance/health" -H "Authorization: Bearer $access" | jq -e '.status == "ok"'

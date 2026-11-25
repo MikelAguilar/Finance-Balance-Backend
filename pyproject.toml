@@ -62,6 +62,7 @@ also_copy = [
     "libs/common/tests/",
     "services/auth/alembic.ini",
     "services/auth/migrations/",
+    "services/auth/openapi.json",
     "services/auth/tests/",
     "services/finance/tests/",
 ]
