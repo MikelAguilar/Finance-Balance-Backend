@@ -1,25 +1,33 @@
-# Raíz del workspace: no es un paquete. Cada servicio vive en services/<nombre>/ con su
-# propio pyproject.toml, y todos comparten este uv.lock y las herramientas de desarrollo.
+# Raíz del workspace: no es un paquete. Cada servicio vive en services/<nombre>/ y el código que
+# comparten vive en libs/<nombre>/. Cada uno tiene su propio pyproject.toml, y todos comparten este
+# uv.lock y las herramientas de desarrollo.
 [tool.uv.workspace]
-members = ["services/*"]
+members = ["libs/*", "services/*"]
 
 [dependency-groups]
 dev = [
     "bandit>=1.9,<2",
     "httpx>=0.27,<1",
     "hypothesis>=6.170,<7",
+    "mutmut>=3,<4",
     "pip-audit>=2.10,<3",
+    "pylint>=4,<5",
     "pytest>=9.2.0,<10",
     "pytest-cov>=7.1,<8",
     "pytest-randomly>=5.1,<6",
+    "radon>=6,<7",
     "ruff>=0.7,<1",
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["services"]
+testpaths = ["libs", "services", "tools"]
+# Las herramientas de tools/ se importan por su nombre (crap) desde sus pruebas.
+pythonpath = ["tools"]
 # Cada servicio tiene su carpeta tests/; importlib evita choques entre archivos con el mismo nombre.
 # --strict-markers: un marcador mal escrito es un error, no una prueba que se salta en silencio.
 addopts = "--import-mode=importlib --strict-markers"
+# mutants/ es la copia que arma mutmut (solo en el CI): no se recolecta en las corridas normales.
+norecursedirs = [".*", "*.egg-info", "build", "dist", "node_modules", "venv", "mutants"]
 markers = ["integration: necesita PostgreSQL real (variable TEST_DATABASE_URL)"]
 # Toda advertencia hace fallar las pruebas, salvo la conocida de Starlette (deuda técnica registrada).
 filterwarnings = [
@@ -28,7 +36,7 @@ filterwarnings = [
 ]
 
 [tool.coverage.run]
-source = ["auth_service"]
+source = ["auth_service", "finance_service", "service_common"]
 branch = true
 
 [tool.coverage.report]
@@ -46,4 +54,4 @@ select = ["E", "F", "I", "B", "UP"]
 exclude_dirs = ["tests", ".venv"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["auth_service"]
+known-first-party = ["auth_service", "finance_service", "service_common"]

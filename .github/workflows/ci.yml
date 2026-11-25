@@ -33,6 +33,10 @@ jobs:
       - run: uv run pytest
         env:
           HYPOTHESIS_PROFILE: ci
+      # Código repetido (6 líneas o más) en el código fuente y las herramientas. Las pruebas quedan
+      # fuera: repiten a propósito los valores esperados (son su oráculo).
+      - name: Duplicación (pylint)
+        run: uv run pylint --disable=all --enable=duplicate-code --min-similarity-lines=6 libs/*/src services/*/src tools/crap.py
 
   seguridad:
     runs-on: ubuntu-latest
@@ -88,9 +92,62 @@ jobs:
           enable-cache: true
       - run: uv sync --locked --all-packages
       # Todas las pruebas (unitarias, de integración y de contrato) con cobertura mínima del 90 %.
-      - run: uv run pytest --cov --cov-fail-under=90
+      - run: uv run pytest --cov --cov-fail-under=90 --cov-report=term --cov-report=json
         env:
           HYPOTHESIS_PROFILE: ci
+      # CRAP por función (complejidad cruzada con cobertura): ninguna llega a 10.
+      - name: CRAP
+        run: uv run python tools/crap.py coverage.json --limit 10
+
+  # Mutación: mutmut cambia el código a propósito (un > por >=, un True por False…) y cada cambio
+  # debe hacer fallar alguna prueba. Un mutante que sobrevive o que ninguna prueba toca es un hueco.
+  # Un job por paquete: mutmut nombra cada módulo según su ruta, así que corre desde la carpeta del
+  # paquete (src/ es su convención) para que coincida con cómo lo importan las pruebas.
+  mutacion:
+    needs: [integracion]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        paquete: [libs/common, services/auth, services/finance]
+    defaults:
+      run:
+        working-directory: ${{ matrix.paquete }}
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test -d test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql+psycopg://test:test@localhost:5432/test
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.13.9"
+          python-version: "3.12"
+          enable-cache: true
+      - run: uv sync --locked --all-packages
+      # Un solo proceso a la vez: todas las pruebas de integración comparten la misma base.
+      - run: uv run mutmut run --max-children 1
+      - name: Ningún mutante sobrevive ni queda sin pruebas
+        run: |
+          uv run mutmut results --all true | tee mutantes.txt
+          estados="survived|no tests|timeout|suspicious|segfault|not checked"
+          vivos=$(grep -E ": ($estados)" mutantes.txt | cut -d: -f1 | tr -d ' ' | sort -u)
+          # El diff de cada mutante vivo, para saber qué prueba falta sin adivinar.
+          for mutante in $vivos; do uv run mutmut show "$mutante"; done
+          test -z "$vivos"
 
   docker:
     needs: [calidad, seguridad, integracion]
@@ -168,6 +225,32 @@ jobs:
           # El correo queda libre para una cuenta nueva.
           curl --fail -X POST "$api/register" -H "$json" \
             -d "$body, \"first_name\": \"Nueva\", \"last_name\": \"Cuenta\"}"
+      # /finance/* solo pasa con una sesión activa: el gateway la verifica con auth en cada petición.
+      - name: Finanzas solo con sesión activa
+        run: |
+          api=http://localhost:8000
+          json="Content-Type: application/json"
+          status() { curl -s -o /dev/null -w "%{http_code}" "$@"; }
+          body='{"email": "finanzas@example.com", "password": "contraseña de prueba de CI"'
+          curl --fail -X POST "$api/auth/register" -H "$json" \
+            -d "$body, \"first_name\": \"Finanzas\", \"last_name\": \"de CI\"}"
+          access=$(curl --fail -X POST "$api/auth/sessions" -H "$json" \
+            -d "$body, \"device_id\": \"ci\", \"device_name\": \"CI\"}" | jq -r .access_token)
+          # Sin token, con un token inventado o con una cabecera de usuario falsa: 401.
+          test "$(status "$api/finance/health")" = "401"
+          fake="token-inventado"
+          test "$(status "$api/finance/health" -H "Authorization: Bearer $fake")" = "401"
+          test "$(status "$api/finance/health" -H "X-User-Id: 00000000-0000-0000-0000-000000000001")" = "401"
+          # Con sesión activa pasa.
+          curl --fail "$api/finance/health" -H "Authorization: Bearer $access" | jq -e '.status == "ok"'
+          # Swagger de finanzas (solo en desarrollo) funciona sin token, con el prefijo /finance.
+          curl --fail "$api/finance/openapi.json" | jq -e '.info.title'
+          curl --fail "$api/finance/docs" | grep -q "/finance/openapi.json"
+          # La verificación es solo interna: desde fuera no existe.
+          test "$(status "$api/auth/verify" -H "Authorization: Bearer $access")" = "404"
+          # Al cerrar la sesión, finanzas deja de responder a ese token.
+          curl --fail -X DELETE "$api/auth/sessions/current" -H "Authorization: Bearer $access"
+          test "$(status "$api/finance/health" -H "Authorization: Bearer $access")" = "401"
       # El gateway rechaza cuerpos de más de 1 MB.
       - name: Cuerpo demasiado grande → 413
         run: |

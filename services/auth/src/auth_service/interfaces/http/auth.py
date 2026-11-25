@@ -338,6 +338,15 @@ def revoke_session(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+# Solo para el gateway: lo consulta antes de pasar cada petición a /finance/* y le entrega el
+# usuario a ese servicio en X-User-Id. Desde fuera el gateway responde 404, y no sale en Swagger.
+@router.get("/verify", status_code=status.HTTP_204_NO_CONTENT, include_in_schema=False)
+def verify_session(session: CurrentSession) -> Response:
+    return Response(
+        status_code=status.HTTP_204_NO_CONTENT, headers={"X-User-Id": str(session.user_id)}
+    )
+
+
 @router.get("/me", response_model=UserResponse, responses=UNAUTHORIZED)
 def get_profile(
     session: CurrentSession, use_case: Annotated[GetProfile, Depends(get_get_profile)]

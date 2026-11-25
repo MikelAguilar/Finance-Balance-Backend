@@ -14,7 +14,31 @@
 
 	# handle_path quita el prefijo: /auth/health llega al servicio como /health.
 	handle_path /auth/* {
+		# /verify es solo para el propio gateway (forward_auth, abajo): desde fuera no existe.
+		respond /verify 404
 		reverse_proxy auth:8000
+	}
+
+	# Finanzas: antes de cada petición, el gateway pregunta a autenticación si el token es válido
+	# y su sesión sigue activa. Con 204 pasa y le entrega a finanzas el usuario en X-User-Id; con
+	# 401, ese 401 es lo que recibe la app.
+	handle_path /finance/* {
+		# route respeta este orden. Primero se borra cualquier X-User-Id que venga de fuera:
+		# así nadie puede hacerse pasar por otro usuario.
+		route {
+			request_header -X-User-Id
+			# Swagger no lleva token (el navegador no lo manda). Solo existe en desarrollo: en
+			# producción el servicio responde 404.
+			@docs path /docs /openapi.json
+			handle @docs {
+				reverse_proxy finance:8000
+			}
+			forward_auth auth:8000 {
+				uri /verify
+				copy_headers X-User-Id
+			}
+			reverse_proxy finance:8000
+		}
 	}
 
 	# Salud del propio gateway.

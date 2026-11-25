@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=84.2.1"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "finance-balance-common"
+version = "0.1.0"
+description = "Piezas HTTP comunes a los servicios de Finance Balance: salud y cabeceras de seguridad"
+license = "MIT"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115,<1",
+    "pydantic>=2.9,<3",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# Mutación (job «mutacion» del CI, uno por paquete). mutmut corre desde esta carpeta: así el
+# módulo que muta (src/...) tiene el mismo nombre con que lo importan las pruebas.
+[tool.mutmut]
+source_paths = ["src/"]
+pytest_add_cli_args = ["-p", "no:randomly"]
+pytest_add_cli_args_test_selection = ["tests/"]

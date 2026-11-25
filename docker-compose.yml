@@ -36,6 +36,21 @@ services:
       start_period: 10s
     mem_limit: 192m
 
+  finance:
+    build:
+      context: .
+      dockerfile: services/finance/Dockerfile
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+    # Sin ports: solo el gateway lo alcanza, y siempre después de verificar la sesión con auth.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    mem_limit: 192m
+
   gateway:
     image: caddy:2.11.9-alpine
     ports:
@@ -44,6 +59,8 @@ services:
       - ./gateway/Caddyfile:/etc/caddy/Caddyfile:ro
     depends_on:
       auth:
+        condition: service_healthy
+      finance:
         condition: service_healthy
     mem_limit: 64m
 
