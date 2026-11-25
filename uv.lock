@@ -11,6 +11,7 @@ resolution-markers = [
 members = [
     "finance-balance-auth",
     "finance-balance-common",
+    "finance-balance-finance",
 ]
 
 [manifest.dependency-groups]
@@ -641,6 +642,25 @@ dependencies = [
 requires-dist = [
     { name = "fastapi", specifier = ">=0.115,<1" },
     { name = "pydantic", specifier = ">=2.9,<3" },
+]
+
+[[package]]
+name = "finance-balance-finance"
+version = "0.1.0"
+source = { editable = "services/finance" }
+dependencies = [
+    { name = "fastapi" },
+    { name = "finance-balance-common" },
+    { name = "pydantic-settings" },
+    { name = "uvicorn" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "fastapi", specifier = ">=0.115,<1" },
+    { name = "finance-balance-common", editable = "libs/common" },
+    { name = "pydantic-settings", specifier = ">=2.6,<3" },
+    { name = "uvicorn", specifier = ">=0.32,<1" },
 ]
 
 [[package]]
