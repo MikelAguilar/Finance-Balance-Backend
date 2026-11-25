@@ -24,7 +24,7 @@ class RegisterUser:
         self._hasher = hasher
         self._clock = clock
 
-    def execute(self, email: str, password: str) -> User:
+    def execute(self, email: str, password: str, first_name: str, last_name: str) -> User:
         check_password_policy(password)
         email = normalize_email(email)
         with self._uow_factory() as uow:
@@ -35,6 +35,8 @@ class RegisterUser:
                 email=email,
                 password_hash=self._hasher.hash(password),
                 created_at=self._clock.now(),
+                first_name=first_name,
+                last_name=last_name,
             )
             uow.users.add(user)
             uow.commit()
@@ -244,13 +246,18 @@ class UpdateProfile:
     def __init__(self, uow_factory: Callable[[], UnitOfWork]) -> None:
         self._uow_factory = uow_factory
 
-    def execute(self, user_id: UUID, name: str | None) -> User:
-        """`name=None` borra el nombre."""
+    def execute(
+        self, user_id: UUID, *, first_name: str | None = None, last_name: str | None = None
+    ) -> User:
+        """Cambia solo lo que se pasa: None deja ese dato como está."""
         with self._uow_factory() as uow:
             user = uow.users.get(user_id, for_update=True)
             if user is None:
                 raise InvalidToken()
-            user.name = name
+            if first_name is not None:
+                user.first_name = first_name
+            if last_name is not None:
+                user.last_name = last_name
             uow.commit()
         return user
 

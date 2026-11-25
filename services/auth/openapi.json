@@ -62,7 +62,7 @@
             }
           },
           "422": {
-            "description": "Correo o contraseña inválidos"
+            "description": "Correo, contraseña, nombre o apellido inválidos"
           }
         }
       }
@@ -320,7 +320,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProfileResponse"
+                  "$ref": "#/components/schemas/UserResponse"
                 }
               }
             }
@@ -364,7 +364,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProfileResponse"
+                  "$ref": "#/components/schemas/UserResponse"
                 }
               }
             }
@@ -547,43 +547,6 @@
         ],
         "title": "LoginRequest"
       },
-      "ProfileResponse": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Id"
-          },
-          "email": {
-            "type": "string",
-            "title": "Email"
-          },
-          "name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Name"
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Created At"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "email",
-          "name",
-          "created_at"
-        ],
-        "title": "ProfileResponse"
-      },
       "RefreshRequest": {
         "properties": {
           "refresh_token": {
@@ -610,13 +573,27 @@
             "type": "string",
             "maxLength": 128,
             "title": "Password"
+          },
+          "first_name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "First Name"
+          },
+          "last_name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Last Name"
           }
         },
         "additionalProperties": false,
         "type": "object",
         "required": [
           "email",
-          "password"
+          "password",
+          "first_name",
+          "last_name"
         ],
         "title": "RegisterRequest"
       },
@@ -706,7 +683,7 @@
       },
       "UpdateProfileRequest": {
         "properties": {
-          "name": {
+          "first_name": {
             "anyOf": [
               {
                 "type": "string",
@@ -717,13 +694,26 @@
                 "type": "null"
               }
             ],
-            "title": "Name"
+            "title": "First Name"
+          },
+          "last_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Name"
           }
         },
         "additionalProperties": false,
         "type": "object",
         "title": "UpdateProfileRequest",
-        "description": "Solo cambia lo que se envía. `\"name\": null` borra el nombre."
+        "description": "Solo cambia lo que se envía; un campo ausente queda como está."
       },
       "UserResponse": {
         "properties": {
@@ -736,6 +726,14 @@
             "type": "string",
             "title": "Email"
           },
+          "first_name": {
+            "type": "string",
+            "title": "First Name"
+          },
+          "last_name": {
+            "type": "string",
+            "title": "Last Name"
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -746,6 +744,8 @@
         "required": [
           "id",
           "email",
+          "first_name",
+          "last_name",
           "created_at"
         ],
         "title": "UserResponse"

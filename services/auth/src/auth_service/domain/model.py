@@ -28,8 +28,9 @@ class User:
     email: str
     password_hash: str
     created_at: datetime
-    # Nombre para mostrar en la app. Opcional: la cuenta existe sin él.
-    name: str | None = None
+    # Obligatorios desde el registro. last_name guarda todos los apellidos («Aguilar García»).
+    first_name: str
+    last_name: str
 
 
 @dataclass

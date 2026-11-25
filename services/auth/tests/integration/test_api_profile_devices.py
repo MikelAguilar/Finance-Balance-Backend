@@ -11,8 +11,9 @@ EMAIL = "luis@example.com"
 OTHER_EMAIL = "ana@example.com"
 
 
-def register(client, email=EMAIL):
-    assert client.post("/register", json={"email": email, "password": PASSWORD}).status_code == 201
+def register(client, email=EMAIL, first_name="Luis Miguel", last_name="Aguilar García"):
+    body = {"email": email, "password": PASSWORD, "first_name": first_name, "last_name": last_name}
+    assert client.post("/register", json=body).status_code == 201
 
 
 def log_in(client, device_id="telefono", email=EMAIL, device_name=None):
@@ -36,7 +37,7 @@ def auth(tokens):
 # ------------------------------------------------------------------ perfil
 
 
-def test_profile_of_a_new_account(client) -> None:
+def test_profile_shows_the_names_given_at_registration(client) -> None:
     register(client, email="  Luis@Example.COM ")
     tokens = log_in(client)
 
@@ -45,8 +46,8 @@ def test_profile_of_a_new_account(client) -> None:
     assert response.status_code == 200
     profile = response.json()
     assert profile["email"] == EMAIL
-    assert profile["name"] is None
-    assert set(profile) == {"id", "email", "name", "created_at"}
+    assert (profile["first_name"], profile["last_name"]) == ("Luis Miguel", "Aguilar García")
+    assert set(profile) == {"id", "email", "first_name", "last_name", "created_at"}
 
 
 def test_profile_never_exposes_the_password_hash(client) -> None:
@@ -59,15 +60,35 @@ def test_profile_never_exposes_the_password_hash(client) -> None:
     assert "password" not in body
 
 
-def test_update_name_and_read_it_back(client) -> None:
+def test_update_both_names_and_read_them_back(client) -> None:
     register(client)
     tokens = log_in(client)
 
-    updated = client.patch("/me", json={"name": "  Luis Miguel  "}, headers=auth(tokens))
+    updated = client.patch(
+        "/me", json={"first_name": "  Ana ", "last_name": " López Pérez "}, headers=auth(tokens)
+    )
 
     assert updated.status_code == 200
-    assert updated.json()["name"] == "Luis Miguel"
-    assert client.get("/me", headers=auth(tokens)).json()["name"] == "Luis Miguel"
+    assert (updated.json()["first_name"], updated.json()["last_name"]) == ("Ana", "López Pérez")
+    profile = client.get("/me", headers=auth(tokens)).json()
+    assert (profile["first_name"], profile["last_name"]) == ("Ana", "López Pérez")
+
+
+@pytest.mark.parametrize(
+    "change,expected",
+    [
+        ({"first_name": "Luis"}, ("Luis", "Aguilar García")),
+        ({"last_name": "Aguilar"}, ("Luis Miguel", "Aguilar")),
+        ({}, ("Luis Miguel", "Aguilar García")),
+    ],
+)
+def test_update_changes_only_what_is_sent(client, change, expected) -> None:
+    register(client)
+    tokens = log_in(client)
+
+    profile = client.patch("/me", json=change, headers=auth(tokens)).json()
+
+    assert (profile["first_name"], profile["last_name"]) == expected
 
 
 @pytest.mark.parametrize(
@@ -83,50 +104,62 @@ def test_update_name_and_read_it_back(client) -> None:
         "L",
     ],
 )
-def test_unusual_names_are_stored_exactly(client, engine, name) -> None:
+@pytest.mark.parametrize("field", ["first_name", "last_name"])
+def test_unusual_names_are_stored_exactly(client, engine, field, name) -> None:
     register(client)
     tokens = log_in(client)
 
-    assert client.patch("/me", json={"name": name}, headers=auth(tokens)).json()["name"] == name
+    assert client.patch("/me", json={field: name}, headers=auth(tokens)).json()[field] == name
     with engine.connect() as connection:
-        stored = connection.execute(text("SELECT name FROM auth.users")).scalar_one()
+        stored = connection.execute(text(f"SELECT {field} FROM auth.users")).scalar_one()
     assert stored == name
 
 
-def test_null_clears_the_name_and_empty_body_changes_nothing(client) -> None:
+@pytest.mark.parametrize("field", ["first_name", "last_name"])
+def test_names_cannot_be_cleared_with_null(client, field) -> None:
     register(client)
     tokens = log_in(client)
-    client.patch("/me", json={"name": "Luis"}, headers=auth(tokens))
 
-    unchanged = client.patch("/me", json={}, headers=auth(tokens))
-    cleared = client.patch("/me", json={"name": None}, headers=auth(tokens))
-
-    assert unchanged.json()["name"] == "Luis"
-    assert cleared.json()["name"] is None
-
-
-def test_name_is_shared_by_every_device_and_survives_a_new_login(client) -> None:
-    register(client)
-    phone = log_in(client, "telefono")
-    client.patch("/me", json={"name": "Luis"}, headers=auth(phone))
-
-    tablet = log_in(client, "tableta")
-
-    assert client.get("/me", headers=auth(tablet)).json()["name"] == "Luis"
-
-
-def test_rejected_update_does_not_change_the_name(client) -> None:
-    register(client)
-    tokens = log_in(client)
-    client.patch("/me", json={"name": "Luis"}, headers=auth(tokens))
-
-    response = client.patch(
-        "/me", json={"name": "Luis", "email": "x@example.com"}, headers=auth(tokens)
-    )
+    response = client.patch("/me", json={field: None}, headers=auth(tokens))
 
     assert response.status_code == 422
     profile = client.get("/me", headers=auth(tokens)).json()
-    assert (profile["name"], profile["email"]) == ("Luis", EMAIL)
+    assert (profile["first_name"], profile["last_name"]) == ("Luis Miguel", "Aguilar García")
+
+
+def test_names_are_shared_by_every_device_and_survive_a_new_login(client) -> None:
+    register(client)
+    phone = log_in(client, "telefono")
+    client.patch("/me", json={"first_name": "Luis"}, headers=auth(phone))
+
+    tablet = log_in(client, "tableta")
+
+    assert client.get("/me", headers=auth(tablet)).json()["first_name"] == "Luis"
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        pytest.param({"first_name": "Ana", "email": "x@example.com"}, id="correo"),
+        pytest.param({"first_name": "Ana", "last_name": ""}, id="apellido vacío"),
+        pytest.param({"first_name": "Ana", "last_name": None}, id="apellido nulo"),
+        pytest.param({"first_name": "Ana", "last_name": "y" * 101}, id="apellido de 101"),
+    ],
+)
+def test_rejected_update_changes_neither_name(client, body) -> None:
+    """Si una parte del cambio no es válida, no se guarda ninguna."""
+    register(client)
+    tokens = log_in(client)
+
+    response = client.patch("/me", json=body, headers=auth(tokens))
+
+    assert response.status_code == 422
+    profile = client.get("/me", headers=auth(tokens)).json()
+    assert (profile["first_name"], profile["last_name"], profile["email"]) == (
+        "Luis Miguel",
+        "Aguilar García",
+        EMAIL,
+    )
 
 
 def test_profile_stops_working_after_logging_out(client) -> None:
@@ -135,17 +168,17 @@ def test_profile_stops_working_after_logging_out(client) -> None:
     client.delete("/sessions/current", headers=auth(tokens))
 
     assert client.get("/me", headers=auth(tokens)).status_code == 401
-    assert client.patch("/me", json={"name": "X"}, headers=auth(tokens)).status_code == 401
+    assert client.patch("/me", json={"first_name": "X"}, headers=auth(tokens)).status_code == 401
 
 
 def test_each_account_only_sees_and_edits_its_own_profile(client) -> None:
     register(client)
-    register(client, OTHER_EMAIL)
+    register(client, OTHER_EMAIL, first_name="Ana", last_name="López")
     luis, ana = log_in(client), log_in(client, email=OTHER_EMAIL)
 
-    client.patch("/me", json={"name": "Ana"}, headers=auth(ana))
+    client.patch("/me", json={"first_name": "Cambiado"}, headers=auth(ana))
 
-    assert client.get("/me", headers=auth(luis)).json()["name"] is None
+    assert client.get("/me", headers=auth(luis)).json()["first_name"] == "Luis Miguel"
     assert client.get("/me", headers=auth(ana)).json()["email"] == OTHER_EMAIL
 
 

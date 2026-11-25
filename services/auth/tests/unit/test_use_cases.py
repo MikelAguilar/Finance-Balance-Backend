@@ -44,9 +44,10 @@ def log_in(uow, hasher, clock) -> LogIn:
 
 
 def test_register_saves_user_with_hash_and_normalized_email(register, uow, clock) -> None:
-    user = register.execute(" Luis@Example.com", PASSWORD)
+    user = register.execute(" Luis@Example.com", PASSWORD, "Luis Miguel", "Aguilar García")
 
     assert user.email == "luis@example.com"
+    assert (user.first_name, user.last_name) == ("Luis Miguel", "Aguilar García")
     assert user.password_hash == f"hashed:{PASSWORD}"
     assert user.created_at == clock.now()
     assert uow.users.get_by_email("luis@example.com") == user
@@ -54,22 +55,22 @@ def test_register_saves_user_with_hash_and_normalized_email(register, uow, clock
 
 
 def test_register_existing_email_fails_regardless_of_case(register) -> None:
-    register.execute("luis@example.com", PASSWORD)
+    register.execute("luis@example.com", PASSWORD, "Luis", "Aguilar")
 
     with pytest.raises(EmailAlreadyRegistered):
-        register.execute("LUIS@example.com", PASSWORD)
+        register.execute("LUIS@example.com", PASSWORD, "Luis", "Aguilar")
 
 
 def test_register_with_short_password_fails_and_saves_nothing(register, uow) -> None:
     with pytest.raises(WeakPassword):
-        register.execute("luis@example.com", "corta")
+        register.execute("luis@example.com", "corta", "Luis", "Aguilar")
 
     assert uow.users.by_email == {}
     assert uow.commits == 0
 
 
 def test_login_creates_session_and_returns_tokens(register, log_in, uow, clock) -> None:
-    user = register.execute("luis@example.com", PASSWORD)
+    user = register.execute("luis@example.com", PASSWORD, "Luis", "Aguilar")
 
     result = log_in.execute("Luis@Example.com", PASSWORD, "pixel-8-abc", "Pixel 8")
 
@@ -86,7 +87,7 @@ def test_login_creates_session_and_returns_tokens(register, log_in, uow, clock) 
 
 
 def test_wrong_password_creates_no_session(register, log_in, uow) -> None:
-    register.execute("luis@example.com", PASSWORD)
+    register.execute("luis@example.com", PASSWORD, "Luis", "Aguilar")
 
     with pytest.raises(InvalidCredentials):
         log_in.execute("luis@example.com", "otra contraseña larga", "pixel-8-abc", "Pixel 8")
@@ -104,7 +105,7 @@ def test_unknown_email_fails_the_same_and_still_verifies_a_hash(log_in, hasher) 
 
 
 def test_logging_in_again_on_same_device_revokes_previous(register, log_in, uow, clock) -> None:
-    register.execute("luis@example.com", PASSWORD)
+    register.execute("luis@example.com", PASSWORD, "Luis", "Aguilar")
     log_in.execute("luis@example.com", PASSWORD, "pixel-8-abc", "Pixel 8")
     clock.advance(timedelta(minutes=5))
 
@@ -116,7 +117,7 @@ def test_logging_in_again_on_same_device_revokes_previous(register, log_in, uow,
 
 
 def test_login_on_another_device_keeps_other_sessions(register, log_in, uow, clock) -> None:
-    register.execute("luis@example.com", PASSWORD)
+    register.execute("luis@example.com", PASSWORD, "Luis", "Aguilar")
     log_in.execute("luis@example.com", PASSWORD, "pixel-8-abc", "Pixel 8")
 
     log_in.execute("luis@example.com", PASSWORD, "galaxy-s24-xyz", "Galaxy S24")

@@ -4,7 +4,7 @@ Backend de Finance Balance, una aplicación personal de finanzas para Android. E
 
 ## Qué hace
 
-- Registro e inicio de sesión con correo y contraseña.
+- Registro con nombre, apellidos, correo y contraseña; inicio de sesión con correo y contraseña.
 - Sesiones por dispositivo: puedes tener la cuenta abierta en varios teléfonos y cerrar la sesión de cualquiera de ellos a distancia.
 - Sincronización de la información que la app guarda sin conexión.
 - Borrado lógico: lo que se borra se oculta de inmediato y el servidor lo conserva 30 días antes de eliminarlo de forma definitiva.
@@ -86,13 +86,13 @@ Swagger solo está disponible en desarrollo. En producción se desactiva.
 |--------|----------------------|-------------|
 | GET    | `/health`            | Indica si el gateway está activo. |
 | GET    | `/auth/health`       | Indica si el servicio de autenticación está activo. |
-| POST   | `/auth/register`     | Crea una cuenta con correo y contraseña (12 a 128 caracteres). `201`, o `409` si el correo ya existe. |
+| POST   | `/auth/register`     | Crea una cuenta con `first_name`, `last_name` (todos los apellidos en un campo; 1 a 100 caracteres cada uno, sin caracteres de control), correo y contraseña (12 a 128 caracteres). `201`; `409` si el correo ya existe; `422` si falta un dato o no es válido. |
 | POST   | `/auth/sessions`     | Inicia sesión en un dispositivo (`device_id`, `device_name`). Devuelve el token de acceso (15 min) y el refresh token (90 días). `401` si las credenciales no son válidas; `429` (con `Retry-After`) tras 5 fallos del mismo correo en 15 minutos. |
 | POST   | `/auth/sessions/refresh` | Entrega tokens nuevos a cambio del refresh token, que deja de servir. Reutilizar uno viejo cierra la sesión. `401` si no es válido. |
 | DELETE | `/auth/sessions/current` | Cierra la sesión de este dispositivo. Requiere `Authorization: Bearer <token de acceso>`. `204`. |
 | PUT    | `/auth/password` | Cambia la contraseña (pide la actual) y cierra los demás dispositivos. `204`; `403` si la actual no es correcta. |
-| GET    | `/auth/me` | Perfil de la cuenta: id, correo, nombre y fecha de alta. |
-| PATCH  | `/auth/me` | Cambia el nombre (1 a 100 caracteres, sin caracteres de control); `"name": null` lo borra. Solo acepta `name`. |
+| GET    | `/auth/me` | Perfil de la cuenta: id, correo, nombre, apellidos y fecha de alta. |
+| PATCH  | `/auth/me` | Cambia el nombre, los apellidos o los dos; lo que no se envía queda igual. No se pueden borrar (`null` da `422`). Solo acepta `first_name` y `last_name`. |
 | GET    | `/auth/sessions` | Dispositivos con sesión activa, del uso más reciente al más antiguo; `current` marca este dispositivo. |
 | DELETE | `/auth/sessions/{id}` | Cierra la sesión de otro dispositivo (o de este). `204`, también si ya estaba cerrada; `404` si no existe o es de otra cuenta. |
 

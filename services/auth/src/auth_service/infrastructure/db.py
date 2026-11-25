@@ -31,7 +31,8 @@ class UserRow(Base):
     email: Mapped[str] = mapped_column(String(254))
     password_hash: Mapped[str] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    name: Mapped[str | None] = mapped_column(String(100))
+    first_name: Mapped[str] = mapped_column(String(100))
+    last_name: Mapped[str] = mapped_column(String(100))
 
 
 class SessionRow(Base):

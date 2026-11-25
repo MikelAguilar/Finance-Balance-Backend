@@ -48,7 +48,7 @@ def register(uow, clock):
 
 @pytest.fixture
 def user(register):
-    return register(EMAIL, PASSWORD)
+    return register(EMAIL, PASSWORD, "Luis Miguel", "Aguilar García")
 
 
 @pytest.fixture
@@ -74,33 +74,46 @@ def session_ids(sessions: list[Session]) -> list[UUID]:
 # ------------------------------------------------------------------ perfil
 
 
-def test_new_account_has_no_name(uow, user) -> None:
+def test_profile_has_the_names_given_at_registration(uow, user) -> None:
     profile = GetProfile(lambda: uow).execute(user.id)
 
     assert profile.email == EMAIL
-    assert profile.name is None
+    assert (profile.first_name, profile.last_name) == ("Luis Miguel", "Aguilar García")
 
 
-def test_update_profile_sets_and_commits_the_name(uow, user) -> None:
+def test_update_profile_changes_both_names_in_one_commit(uow, user) -> None:
     commits = uow.commits
 
-    updated = UpdateProfile(lambda: uow).execute(user.id, "Luis Miguel")
+    updated = UpdateProfile(lambda: uow).execute(user.id, first_name="Ana", last_name="López")
 
-    assert updated.name == "Luis Miguel"
-    assert GetProfile(lambda: uow).execute(user.id).name == "Luis Miguel"
+    assert (updated.first_name, updated.last_name) == ("Ana", "López")
+    stored = GetProfile(lambda: uow).execute(user.id)
+    assert (stored.first_name, stored.last_name) == ("Ana", "López")
     assert uow.commits == commits + 1
 
 
-def test_update_profile_with_none_clears_the_name(uow, user) -> None:
-    UpdateProfile(lambda: uow).execute(user.id, "Luis")
+def test_update_profile_changes_only_the_first_name(uow, user) -> None:
+    updated = UpdateProfile(lambda: uow).execute(user.id, first_name="Luis")
 
-    assert UpdateProfile(lambda: uow).execute(user.id, None).name is None
+    assert (updated.first_name, updated.last_name) == ("Luis", "Aguilar García")
+
+
+def test_update_profile_changes_only_the_last_name(uow, user) -> None:
+    updated = UpdateProfile(lambda: uow).execute(user.id, last_name="Aguilar")
+
+    assert (updated.first_name, updated.last_name) == ("Luis Miguel", "Aguilar")
+
+
+def test_update_profile_without_changes_keeps_both_names(uow, user) -> None:
+    updated = UpdateProfile(lambda: uow).execute(user.id)
+
+    assert (updated.first_name, updated.last_name) == ("Luis Miguel", "Aguilar García")
 
 
 def test_update_profile_does_not_touch_email_or_password(uow, user) -> None:
     before = replace(user)
 
-    after = UpdateProfile(lambda: uow).execute(user.id, "Otro nombre")
+    after = UpdateProfile(lambda: uow).execute(user.id, first_name="Otro", last_name="Nombre")
 
     assert (after.email, after.password_hash, after.created_at) == (
         before.email,
@@ -115,7 +128,7 @@ def test_profile_of_a_missing_account_is_an_invalid_token(uow, use_case) -> None
         if use_case is GetProfile:
             use_case(lambda: uow).execute(uuid4())
         else:
-            use_case(lambda: uow).execute(uuid4(), "nombre")
+            use_case(lambda: uow).execute(uuid4(), first_name="Nombre")
     assert uow.commits == 0
 
 
@@ -169,7 +182,7 @@ def test_list_breaks_ties_by_creation_and_then_by_id(user, uow, clock, list_sess
 def test_list_hides_revoked_expired_and_other_users_sessions(
     user, register, log_in, list_sessions, uow, clock
 ) -> None:
-    register(OTHER_EMAIL, PASSWORD)
+    register(OTHER_EMAIL, PASSWORD, "Otra", "Persona")
     log_in("de-ana", email=OTHER_EMAIL)
     revoked = log_in("revocado")
     uow.sessions.get(revoked.session_id).revoke(clock.now())
@@ -258,7 +271,7 @@ def test_revoking_an_expired_session_marks_it_revoked(user, log_in, revoke, uow,
 def test_revoking_another_users_session_looks_like_it_does_not_exist(
     user, register, log_in, revoke, uow
 ) -> None:
-    register(OTHER_EMAIL, PASSWORD)
+    register(OTHER_EMAIL, PASSWORD, "Otra", "Persona")
     anas = log_in("de-ana", email=OTHER_EMAIL)
 
     with pytest.raises(SessionNotFound):

@@ -8,7 +8,8 @@ EMAIL = "luis@example.com"
 
 
 def register(client):
-    assert client.post("/register", json={"email": EMAIL, "password": PASSWORD}).status_code == 201
+    body = {"email": EMAIL, "password": PASSWORD, "first_name": "Luis", "last_name": "Aguilar"}
+    assert client.post("/register", json=body).status_code == 201
 
 
 def log_in(client, device_id="pixel-8-abc", password=PASSWORD):

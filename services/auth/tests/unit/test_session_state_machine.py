@@ -55,9 +55,13 @@ class SessionLifecycle(RuleBasedStateMachine):
         self.revoke = RevokeSession(factory, self.clock)
         self.update_profile = UpdateProfile(factory)
         self.get_profile = GetProfile(factory)
-        self.user_id = RegisterUser(factory, hasher, self.clock).execute(EMAIL, PASSWORDS[0]).id
+        self.user_id = (
+            RegisterUser(factory, hasher, self.clock)
+            .execute(EMAIL, PASSWORDS[0], "Luis", "Aguilar")
+            .id
+        )
         self.password = PASSWORDS[0]
-        self.name: str | None = None
+        self.names = ("Luis", "Aguilar")
         # Lo que el cliente de cada dispositivo cree tener: tokens vigentes y tokens ya cambiados.
         self.current: dict[str, tuple[str, str]] = {}  # dispositivo -> (acceso, refresh)
         self.stale: dict[str, list[str]] = {}  # dispositivo -> refresh tokens ya rotados
@@ -177,10 +181,13 @@ class SessionLifecycle(RuleBasedStateMachine):
             d: t for d, t in self.current.items() if self._session_of(t[1]) is not target
         }
 
-    @rule(name=st.one_of(st.none(), st.sampled_from(["Luis", "María José", "📱"])))
-    def rename(self, name: str | None) -> None:
-        self.update_profile.execute(self.user_id, name)
-        self.name = name
+    @rule(
+        first_name=st.one_of(st.none(), st.sampled_from(["Luis", "María José", "📱"])),
+        last_name=st.one_of(st.none(), st.sampled_from(["García", "de la Fuente", "O'Brien"])),
+    )
+    def rename(self, first_name: str | None, last_name: str | None) -> None:
+        self.update_profile.execute(self.user_id, first_name=first_name, last_name=last_name)
+        self.names = (first_name or self.names[0], last_name or self.names[1])
 
     @rule(minutes=st.integers(min_value=1, max_value=60 * 24 * 40))
     def time_passes(self, minutes: int) -> None:
@@ -216,8 +223,9 @@ class SessionLifecycle(RuleBasedStateMachine):
         assert uses == sorted(uses, reverse=True)
 
     @invariant()
-    def name_survives_every_other_action(self) -> None:
-        assert self.get_profile.execute(self.user_id).name == self.name
+    def names_survive_every_other_action(self) -> None:
+        profile = self.get_profile.execute(self.user_id)
+        assert (profile.first_name, profile.last_name) == self.names
 
     @invariant()
     def never_more_than_five_recent_failures_without_blocking(self) -> None:
