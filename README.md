@@ -7,7 +7,7 @@ Backend de Finance Balance, una aplicación personal de finanzas para Android. E
 - Registro con nombre, apellidos, correo y contraseña; inicio de sesión con correo y contraseña.
 - Sesiones por dispositivo: puedes tener la cuenta abierta en varios teléfonos y cerrar la sesión de cualquiera de ellos a distancia.
 - Sincronización de la información que la app guarda sin conexión.
-- Borrado lógico: lo que se borra se oculta de inmediato y el servidor lo conserva 30 días antes de eliminarlo de forma definitiva. Las cuentas eliminadas son la excepción: se conservan siempre.
+- Borrado lógico: lo que se borra se oculta de inmediato, pero nada se elimina de la base. El servidor conserva todo, cuentas incluidas.
 
 ## Estado
 
