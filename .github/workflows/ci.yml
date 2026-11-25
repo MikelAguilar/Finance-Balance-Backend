@@ -99,6 +99,43 @@ jobs:
       - name: CRAP
         run: uv run python tools/crap.py coverage.json --limit 10
 
+  # Mutación: mutmut cambia el código a propósito (un > por >=, un True por False…) y cada cambio
+  # debe hacer fallar alguna prueba. Un mutante que sobrevive o que ninguna prueba toca es un hueco.
+  mutacion:
+    needs: [integracion]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test -d test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql+psycopg://test:test@localhost:5432/test
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.13.9"
+          python-version: "3.12"
+          enable-cache: true
+      - run: uv sync --locked --all-packages
+      # Un solo proceso a la vez: todas las pruebas de integración comparten la misma base.
+      - run: uv run mutmut run --max-children 1
+      - name: Ningún mutante sobrevive ni queda sin pruebas
+        run: |
+          uv run mutmut results --all true | tee mutantes.txt
+          ! grep -E ": (survived|no tests|timeout|suspicious|segfault|not checked)" mutantes.txt
+
   docker:
     needs: [calidad, seguridad, integracion]
     runs-on: ubuntu-latest

@@ -99,3 +99,14 @@ def test_main_fails_only_when_a_function_reaches_the_limit(tmp_path, capsys) -> 
     report_path.write_text(json.dumps(_coverage(str(module), {"branchy": (6, 0.0)})))
     assert main([str(report_path), "--limit", "10"]) == 1
     assert "branchy" in capsys.readouterr().out
+
+
+def test_a_function_exactly_at_the_limit_fails(tmp_path) -> None:
+    module = tmp_path / "module.py"
+    module.write_text(SOURCE, encoding="utf-8")
+    report_path = tmp_path / "coverage.json"
+    # branchy sin cobertura da exactamente 12.
+    report_path.write_text(json.dumps(_coverage(str(module), {"branchy": (6, 0.0)})))
+
+    assert main([str(report_path), "--limit", "12"]) == 1
+    assert main([str(report_path), "--limit", "12.5"]) == 0

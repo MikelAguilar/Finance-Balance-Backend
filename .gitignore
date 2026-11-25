@@ -58,3 +58,5 @@ $RECYCLE.BIN/
 # Linux
 *~
 .Trash-*
+# ===== Mutación (mutmut) =====
+mutants/
