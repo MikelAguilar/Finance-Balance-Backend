@@ -19,7 +19,7 @@ from sqlalchemy.engine import Engine
 
 ALEMBIC_INI = Path(__file__).parents[2] / "alembic.ini"
 # Tablas que se vacían después de cada prueba que usa la base.
-TABLES: list[str] = ["finance.cards", "finance.movements"]
+TABLES: list[str] = ["finance.cards", "finance.movements", "finance.monthly_income"]
 
 pytestmark = pytest.mark.integration
 
@@ -124,5 +124,13 @@ def make_movement() -> Callable[..., dict]:
             "owner_cut": date(2026, 12, 5),
             **changes,
         }
+
+    return _make
+
+
+@pytest.fixture
+def make_income() -> Callable[..., dict]:
+    def _make(**changes: object) -> dict:
+        return {**sync_columns(), "amount_cents": 2_500_000, **changes}
 
     return _make

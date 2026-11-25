@@ -9,12 +9,14 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKeyConstraint,
+    Index,
     Integer,
     MetaData,
     Numeric,
     SmallInteger,
     String,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -119,6 +121,23 @@ class MovementRow(SyncColumns, Base):
     payment_source: Mapped[str | None] = mapped_column(String(5))
     review_status: Mapped[str] = mapped_column(String(14))
     owner_cut: Mapped[date] = mapped_column(Date)
+
+
+class MonthlyIncomeRow(SyncColumns, Base):
+    __tablename__ = "monthly_income"
+    __table_args__ = (
+        *sync_constraints("monthly_income"),
+        CheckConstraint("amount_cents > 0", name="ck_monthly_income_amount"),
+        # Un ingreso vigente por cuenta; los anteriores se conservan con deleted_at.
+        Index(
+            "uq_monthly_income_user_current",
+            "user_id",
+            unique=True,
+            postgresql_where=text("deleted_at IS NULL"),
+        ),
+    )
+
+    amount_cents: Mapped[int] = mapped_column(BigInteger)
 
 
 def include_finance_schema(name: str | None, type_: str, parent_names: dict) -> bool:

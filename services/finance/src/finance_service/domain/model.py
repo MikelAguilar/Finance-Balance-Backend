@@ -28,6 +28,7 @@ __all__ = [
     "MAX_CENTS",
     "Card",
     "Installment",
+    "MonthlyIncome",
     "Movement",
     "Normal",
     "OccurredAt",
@@ -35,6 +36,7 @@ __all__ = [
     "PaymentSource",
     "ReviewStatus",
     "parse_card",
+    "parse_monthly_income",
     "parse_movement",
     "parse_occurred_at",
 ]
@@ -237,3 +239,21 @@ def parse_movement(data: Mapping[str, object], now: datetime) -> Movement:
         review_status=choice(ReviewStatus, fields.required("review_status"), "review_status"),
         owner_cut=iso_date(fields.required("owner_cut"), "owner_cut"),
     )
+
+
+# --- Ingreso mensual -----------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class MonthlyIncome:
+    """El ingreso de cada mes. No tener ingreso es no tener registro, no un ingreso de 0."""
+
+    amount_cents: int
+
+    def __post_init__(self) -> None:
+        cents(self.amount_cents, "amount_cents", minimum=1)
+
+
+def parse_monthly_income(data: Mapping[str, object]) -> MonthlyIncome:
+    fields = Fields(data, MonthlyIncome.__dataclass_fields__)
+    return MonthlyIncome(amount_cents=fields.required("amount_cents"))
