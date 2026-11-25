@@ -1,7 +1,8 @@
 """Máquina de estados: Hypothesis combina acciones al azar (iniciar sesión en varios dispositivos,
-renovar, reutilizar tokens viejos, cerrar sesión, cambiar la contraseña, fallar contraseñas y
-dejar pasar el tiempo) y, después de cada paso, comprueba que las reglas del negocio sigan
-cumpliéndose. Es la forma de encontrar combinaciones que a nadie se le ocurriría escribir a mano.
+renovar, reutilizar tokens viejos, cerrar sesión, cerrar otro dispositivo desde la lista, cambiar
+la contraseña, cambiar el nombre, fallar contraseñas y dejar pasar el tiempo) y, después de cada
+paso, comprueba que las reglas del negocio sigan cumpliéndose. Es la forma de encontrar
+combinaciones que a nadie se le ocurriría escribir a mano.
 """
 
 from datetime import timedelta
@@ -12,10 +13,14 @@ from hypothesis.stateful import RuleBasedStateMachine, invariant, precondition, 
 from auth_service.application.use_cases import (
     Authenticate,
     ChangePassword,
+    GetProfile,
+    ListSessions,
     LogIn,
     LogOut,
     RefreshSession,
     RegisterUser,
+    RevokeSession,
+    UpdateProfile,
 )
 from auth_service.domain.errors import (
     InvalidCredentials,
@@ -46,8 +51,13 @@ class SessionLifecycle(RuleBasedStateMachine):
         self.authenticate = Authenticate(factory, tokens, self.clock)
         self.change = ChangePassword(factory, hasher, self.clock)
         self.log_out = LogOut(factory, self.clock)
-        RegisterUser(factory, hasher, self.clock).execute(EMAIL, PASSWORDS[0])
+        self.list_sessions = ListSessions(factory, self.clock)
+        self.revoke = RevokeSession(factory, self.clock)
+        self.update_profile = UpdateProfile(factory)
+        self.get_profile = GetProfile(factory)
+        self.user_id = RegisterUser(factory, hasher, self.clock).execute(EMAIL, PASSWORDS[0]).id
         self.password = PASSWORDS[0]
+        self.name: str | None = None
         # Lo que el cliente de cada dispositivo cree tener: tokens vigentes y tokens ya cambiados.
         self.current: dict[str, tuple[str, str]] = {}  # dispositivo -> (acceso, refresh)
         self.stale: dict[str, list[str]] = {}  # dispositivo -> refresh tokens ya rotados
@@ -144,6 +154,34 @@ class SessionLifecycle(RuleBasedStateMachine):
         # Los demás dispositivos quedan fuera.
         self.current = {device: self.current[device]}
 
+    @precondition(lambda self: len(self.current) >= 1)
+    @rule(data=st.data())
+    def revoke_from_device_list(self, data) -> None:
+        """Desde un dispositivo, cierra otro (o el mismo) usando la lista de dispositivos."""
+        actor = data.draw(st.sampled_from(sorted(self.current)))
+        try:
+            self.authenticate.execute(self.current[actor][0])
+        except InvalidToken:
+            return
+        listed = self.list_sessions.execute(self.user_id)
+        # Orden por dispositivo: los id son aleatorios y Hypothesis necesita repetir la elección.
+        target = data.draw(st.sampled_from(sorted(listed, key=lambda s: s.device_id)))
+        self.revoke.execute(self.user_id, target.id)
+        for access, _ in self.current.values():
+            try:
+                context = self.authenticate.execute(access)
+            except InvalidToken:
+                continue
+            assert context.session_id != target.id, "La sesión cerrada siguió sirviendo."
+        self.current = {
+            d: t for d, t in self.current.items() if self._session_of(t[1]) is not target
+        }
+
+    @rule(name=st.one_of(st.none(), st.sampled_from(["Luis", "María José", "📱"])))
+    def rename(self, name: str | None) -> None:
+        self.update_profile.execute(self.user_id, name)
+        self.name = name
+
     @rule(minutes=st.integers(min_value=1, max_value=60 * 24 * 40))
     def time_passes(self, minutes: int) -> None:
         self.clock.advance(timedelta(minutes=minutes))
@@ -167,6 +205,19 @@ class SessionLifecycle(RuleBasedStateMachine):
                 continue
             session = self.uow.sessions.get(context.session_id)
             assert session is not None and session.is_active(now)
+
+    @invariant()
+    def device_list_shows_exactly_the_active_sessions(self) -> None:
+        now = self.clock.now()
+        listed = self.list_sessions.execute(self.user_id)
+        active = {s.id for s in self.uow.sessions.items if s.is_active(now)}
+        assert {s.id for s in listed} == active
+        uses = [s.last_used_at for s in listed]
+        assert uses == sorted(uses, reverse=True)
+
+    @invariant()
+    def name_survives_every_other_action(self) -> None:
+        assert self.get_profile.execute(self.user_id).name == self.name
 
     @invariant()
     def never_more_than_five_recent_failures_without_blocking(self) -> None:

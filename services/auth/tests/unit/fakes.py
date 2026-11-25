@@ -82,7 +82,7 @@ class FakeSessions:
     def add(self, session: Session) -> None:
         self.items.append(session)
 
-    def get(self, session_id: UUID) -> Session | None:
+    def get(self, session_id: UUID, *, for_update: bool = False) -> Session | None:
         return next((s for s in self.items if s.id == session_id), None)
 
     def get_by_refresh_hash(self, token_hash: str, *, for_update: bool = False) -> Session | None:

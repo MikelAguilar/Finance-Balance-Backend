@@ -119,6 +119,24 @@ jobs:
           renewed=$(curl --fail -X POST "$api/sessions/refresh" -H "$json" -d "{\"refresh_token\": \"$refresh\"}")
           access=$(echo "$renewed" | jq -r .access_token)
           curl --fail -X DELETE "$api/sessions/current" -H "Authorization: Bearer $access"
+      - name: Perfil y lista de dispositivos
+        run: |
+          api=http://localhost:8000/auth
+          json="Content-Type: application/json"
+          body='{"email": "perfil@example.com", "password": "contraseña de prueba de CI"'
+          curl --fail -X POST "$api/register" -H "$json" -d "$body}"
+          phone=$(curl --fail -X POST "$api/sessions" -H "$json" \
+            -d "$body, \"device_id\": \"telefono\", \"device_name\": \"Teléfono\"}" | jq -r .access_token)
+          tablet=$(curl --fail -X POST "$api/sessions" -H "$json" \
+            -d "$body, \"device_id\": \"tableta\", \"device_name\": \"Tableta\"}")
+          curl --fail -X PATCH "$api/me" -H "$json" -H "Authorization: Bearer $phone" \
+            -d '{"name": "Luis 🙂"}' | jq -e '.name == "Luis 🙂"'
+          curl --fail "$api/sessions" -H "Authorization: Bearer $phone" | jq -e 'length == 2'
+          tablet_id=$(echo "$tablet" | jq -r .session_id)
+          curl --fail -X DELETE "$api/sessions/$tablet_id" -H "Authorization: Bearer $phone"
+          code=$(curl -s -o /dev/null -w "%{http_code}" "$api/me" \
+            -H "Authorization: Bearer $(echo "$tablet" | jq -r .access_token)")
+          test "$code" = "401"
       # El gateway rechaza cuerpos de más de 1 MB.
       - name: Cuerpo demasiado grande → 413
         run: |

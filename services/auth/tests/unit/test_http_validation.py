@@ -12,6 +12,10 @@ import jwt
 import pytest
 from jwt.warnings import InsecureKeyLengthWarning
 
+from auth_service.application.use_cases import AuthContext
+from auth_service.domain.errors import InvalidToken
+from auth_service.interfaces.http.auth import current_session
+
 from ..conftest import JWT_SECRET
 
 VALID_LOGIN = {
@@ -25,6 +29,13 @@ VALID_LOGIN = {
 @pytest.fixture
 def client(make_client):
     return make_client("production")
+
+
+@pytest.fixture
+def signed_in(client):
+    """Cliente con la sesión ya verificada: la validación del cuerpo se prueba sin base."""
+    client.app.dependency_overrides[current_session] = lambda: AuthContext(uuid4(), uuid4())
+    return client
 
 
 # ------------------------------------------------------------------ cuerpo de la petición
@@ -98,6 +109,8 @@ def test_invalid_emails_are_rejected(client, email) -> None:
         "\t\n",
         "x" * 101,
         "con\x00nulo",  # PostgreSQL no guarda el carácter nulo: debe rechazarse antes
+        "\x1f",  # carácter de control que Pydantic no recorta como espacio
+        "Pixel\x1b[31m",  # secuencia de escape de terminal
     ],
 )
 def test_invalid_device_fields_are_rejected(client, field, value) -> None:
@@ -170,6 +183,10 @@ BAD_AUTHORIZATION = [
     [
         ("DELETE", "/sessions/current", None),
         ("PUT", "/password", {"current_password": "x" * 12, "new_password": "y" * 12}),
+        ("GET", "/me", None),
+        ("PATCH", "/me", {"name": "Luis"}),
+        ("GET", "/sessions", None),
+        ("DELETE", f"/sessions/{uuid4()}", None),
     ],
 )
 def test_protected_endpoints_reject_bad_authorization(
@@ -231,6 +248,11 @@ def test_forged_or_expired_tokens_are_rejected(client, token_factory) -> None:
         ("PUT", "/sessions"),
         ("GET", "/sessions/refresh"),
         ("POST", "/password"),
+        ("POST", "/me"),
+        ("PUT", "/me"),
+        ("DELETE", "/password"),
+        ("PATCH", "/sessions"),
+        ("GET", f"/sessions/{uuid4()}"),
     ],
 )
 def test_wrong_method_returns_405(client, method, path) -> None:
@@ -240,3 +262,91 @@ def test_wrong_method_returns_405(client, method, path) -> None:
 @pytest.mark.parametrize("path", ["/admin", "/sessions/current/extra", "/../etc/passwd", "/%00"])
 def test_unknown_paths_return_404(client, path) -> None:
     assert client.get(path).status_code == 404
+
+
+# ------------------------------------------------------------------ perfil y dispositivos
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        pytest.param("", id="vacío"),
+        pytest.param("   ", id="solo espacios"),
+        pytest.param("\t\n ", id="tabulador y salto"),
+        pytest.param("x" * 101, id="101 caracteres"),
+        pytest.param("Lu\x00is", id="carácter nulo"),
+        pytest.param("\x1f", id="separador de unidad"),
+        pytest.param("Luis\tMiguel", id="tabulador en medio"),
+        pytest.param("Luis\x7f", id="DEL"),
+        pytest.param("Lu\x85is", id="control C1 en medio"),
+        pytest.param(123, id="número"),
+        pytest.param(True, id="booleano"),
+        pytest.param(["Luis"], id="lista"),
+        pytest.param({"first": "Luis"}, id="objeto"),
+    ],
+)
+def test_invalid_profile_names_are_rejected(signed_in, name) -> None:
+    assert signed_in.patch("/me", json={"name": name}).status_code == 422
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        pytest.param({"email": "otro@example.com"}, id="cambiar correo"),
+        pytest.param({"password_hash": "x"}, id="cambiar hash"),
+        pytest.param({"id": str(uuid4())}, id="cambiar id"),
+        pytest.param({"name": "Luis", "is_admin": True}, id="campo extra"),
+        pytest.param(["Luis"], id="lista en vez de objeto"),
+        pytest.param("Luis", id="texto en vez de objeto"),
+    ],
+)
+def test_profile_update_only_accepts_the_name(signed_in, body) -> None:
+    # El correo y la contraseña tienen sus propios flujos; aquí se rechazan.
+    assert signed_in.patch("/me", json=body).status_code == 422
+
+
+def test_profile_update_rejects_malformed_json(signed_in) -> None:
+    response = signed_in.patch(
+        "/me", content=b'{"name": ', headers={"Content-Type": "application/json"}
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize(
+    "session_id",
+    [
+        "no-es-uuid",
+        "refresh",
+        "123",
+        "00000000-0000-0000-0000-00000000000",  # un dígito de menos
+        "00000000-0000-0000-0000-0000000000000",  # un dígito de más
+        "zzzzzzzz-zzzz-zzzz-zzzz-zzzzzzzzzzzz",
+        "%00",
+        "' OR '1'='1",
+    ],
+)
+def test_revoking_a_session_with_an_invalid_id_returns_422(signed_in, session_id) -> None:
+    assert signed_in.delete(f"/sessions/{session_id}").status_code == 422
+
+
+def test_session_ids_with_extra_path_segments_return_404(signed_in) -> None:
+    assert signed_in.delete(f"/sessions/{uuid4()}/extra").status_code == 404
+
+
+class _AccountGone:
+    """Simula que la cuenta se borró entre la verificación del token y la consulta."""
+
+    def execute(self, *args):
+        raise InvalidToken()
+
+
+@pytest.mark.parametrize("method,body", [("GET", None), ("PATCH", {"name": "Luis"}), ("PATCH", {})])
+def test_profile_of_an_account_deleted_mid_request_returns_401(signed_in, method, body) -> None:
+    signed_in.app.state.get_profile = _AccountGone()
+    signed_in.app.state.update_profile = _AccountGone()
+
+    response = signed_in.request(method, "/me", json=body)
+
+    assert response.status_code == 401
+    assert response.headers["WWW-Authenticate"] == "Bearer"
