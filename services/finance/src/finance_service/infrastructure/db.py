@@ -1,13 +1,17 @@
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy import (
     BigInteger,
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
+    ForeignKeyConstraint,
     Integer,
     MetaData,
+    Numeric,
     SmallInteger,
     String,
     UniqueConstraint,
@@ -60,6 +64,9 @@ class CardRow(SyncColumns, Base):
             name="ck_cards_at_least_one_limit",
         ),
         CheckConstraint("used_at_creation_cents >= 0", name="ck_cards_used_at_creation"),
+        # Destino de la llave foránea de movements: un movimiento solo apunta a una tarjeta de
+        # su misma cuenta.
+        UniqueConstraint("id", "user_id", name="uq_cards_id_user"),
     )
 
     name: Mapped[str] = mapped_column(String(50))
@@ -68,6 +75,50 @@ class CardRow(SyncColumns, Base):
     bank_limit_cents: Mapped[int | None] = mapped_column(BigInteger)
     used_at_creation_cents: Mapped[int] = mapped_column(BigInteger)
     installments_count_against_limit: Mapped[bool] = mapped_column(Boolean)
+
+
+# Cada tipo lleva solo sus campos, y los lleva todos. Los IS NOT NULL no sobran: en un CHECK,
+# una comparación con NULL da NULL, y PostgreSQL deja pasar el NULL.
+MOVEMENT_KIND_RULE = """
+(kind = 'normal' AND months IS NULL AND monthly_rate IS NULL AND payment_source IS NULL)
+OR (kind = 'installment' AND months IS NOT NULL AND monthly_rate IS NOT NULL
+    AND months BETWEEN 1 AND 120 AND monthly_rate >= 0 AND monthly_rate < 1
+    AND payment_source IS NULL)
+OR (kind = 'payment' AND months IS NULL AND monthly_rate IS NULL
+    AND payment_source IS NOT NULL AND payment_source IN ('debit', 'cash'))
+"""
+
+
+class MovementRow(SyncColumns, Base):
+    __tablename__ = "movements"
+    __table_args__ = (
+        *sync_constraints("movements"),
+        ForeignKeyConstraint(
+            ["card_id", "user_id"],
+            [f"{SCHEMA}.cards.id", f"{SCHEMA}.cards.user_id"],
+            name="fk_movements_card",
+        ),
+        CheckConstraint("amount_cents > 0", name="ck_movements_amount"),
+        CheckConstraint(
+            "occurred_offset_minutes BETWEEN -720 AND 840", name="ck_movements_occurred_offset"
+        ),
+        CheckConstraint(MOVEMENT_KIND_RULE, name="ck_movements_kind"),
+        CheckConstraint(
+            "review_status IN ('pending_review', 'confirmed')", name="ck_movements_review_status"
+        ),
+    )
+
+    card_id: Mapped[UUID]
+    amount_cents: Mapped[int] = mapped_column(BigInteger)
+    # timestamptz descarta el offset: por eso se guarda aparte.
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    occurred_offset_minutes: Mapped[int] = mapped_column(SmallInteger)
+    kind: Mapped[str] = mapped_column(String(11))
+    months: Mapped[int | None] = mapped_column(SmallInteger)
+    monthly_rate: Mapped[Decimal | None] = mapped_column(Numeric(7, 6))
+    payment_source: Mapped[str | None] = mapped_column(String(5))
+    review_status: Mapped[str] = mapped_column(String(14))
+    owner_cut: Mapped[date] = mapped_column(Date)
 
 
 def include_finance_schema(name: str | None, type_: str, parent_names: dict) -> bool:

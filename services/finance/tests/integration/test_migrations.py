@@ -9,7 +9,7 @@ from sqlalchemy import inspect, text
 from finance_service.infrastructure.db import SCHEMA, Base, include_finance_schema
 
 # Las tablas de finanzas que deben existir después de migrar.
-TABLES = {"cards"}
+TABLES = {"cards", "movements"}
 
 
 @pytest.fixture
