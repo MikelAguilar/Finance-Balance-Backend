@@ -15,3 +15,10 @@ dependencies = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+# Mutación (job «mutacion» del CI, uno por paquete). mutmut corre desde esta carpeta: así el
+# módulo que muta (src/...) tiene el mismo nombre con que lo importan las pruebas.
+[tool.mutmut]
+source_paths = ["src/"]
+pytest_add_cli_args = ["-p", "no:randomly"]
+pytest_add_cli_args_test_selection = ["tests/"]

@@ -26,6 +26,8 @@ pythonpath = ["tools"]
 # Cada servicio tiene su carpeta tests/; importlib evita choques entre archivos con el mismo nombre.
 # --strict-markers: un marcador mal escrito es un error, no una prueba que se salta en silencio.
 addopts = "--import-mode=importlib --strict-markers"
+# mutants/ es la copia que arma mutmut (solo en el CI): no se recolecta en las corridas normales.
+norecursedirs = [".*", "*.egg-info", "build", "dist", "node_modules", "venv", "mutants"]
 markers = ["integration: necesita PostgreSQL real (variable TEST_DATABASE_URL)"]
 # Toda advertencia hace fallar las pruebas, salvo la conocida de Starlette (deuda técnica registrada).
 filterwarnings = [
@@ -53,17 +55,3 @@ exclude_dirs = ["tests", ".venv"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["auth_service", "finance_service", "service_common"]
-
-# Mutación (job «mutacion» del CI; mutmut necesita fork, así que no corre en Windows).
-[tool.mutmut]
-source_paths = ["libs/common/src/", "services/auth/src/", "services/finance/src/"]
-also_copy = [
-    "conftest.py",
-    "libs/common/tests/",
-    "services/auth/alembic.ini",
-    "services/auth/migrations/",
-    "services/auth/openapi.json",
-    "services/auth/tests/",
-    "services/finance/tests/",
-]
-pytest_add_cli_args = ["-p", "no:randomly"]

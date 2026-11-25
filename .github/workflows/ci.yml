@@ -101,10 +101,19 @@ jobs:
 
   # Mutación: mutmut cambia el código a propósito (un > por >=, un True por False…) y cada cambio
   # debe hacer fallar alguna prueba. Un mutante que sobrevive o que ninguna prueba toca es un hueco.
+  # Un job por paquete: mutmut nombra cada módulo según su ruta, así que corre desde la carpeta del
+  # paquete (src/ es su convención) para que coincida con cómo lo importan las pruebas.
   mutacion:
     needs: [integracion]
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        paquete: [libs/common, services/auth, services/finance]
+    defaults:
+      run:
+        working-directory: ${{ matrix.paquete }}
     services:
       postgres:
         image: postgres:16-alpine
