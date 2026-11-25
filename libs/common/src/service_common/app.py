@@ -13,11 +13,10 @@ def create_service_app(
     *, title: str, production: bool, lifespan: Lifespan | None = None
 ) -> FastAPI:
     """App base de cada servicio: /health, cabeceras de seguridad y Swagger solo en desarrollo."""
+    # Sin openapi_url, FastAPI tampoco publica /docs: apagarlo en producción apaga Swagger entero.
     app = FastAPI(
         lifespan=lifespan,
         title=title,
-        version="0.1.0",
-        docs_url=None if production else "/docs",
         redoc_url=None,
         openapi_url=None if production else "/openapi.json",
     )
