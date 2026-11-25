@@ -28,6 +28,9 @@ class User:
     email: str
     password_hash: str
     created_at: datetime
+    # Obligatorios desde el registro. last_name guarda todos los apellidos («Aguilar García»).
+    first_name: str
+    last_name: str
 
 
 @dataclass

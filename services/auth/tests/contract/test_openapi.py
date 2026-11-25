@@ -22,7 +22,7 @@ def current_spec() -> dict:
     return create_app(settings).openapi()
 
 
-def test_la_api_coincide_con_el_contrato_publicado() -> None:
+def test_api_matches_published_contract() -> None:
     spec = current_spec()
     if os.environ.get("UPDATE_OPENAPI"):
         SNAPSHOT.write_text(json.dumps(spec, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")

@@ -18,7 +18,7 @@ from auth_service.domain.errors import EmailAlreadyRegistered
 from auth_service.domain.model import Session, User
 from auth_service.infrastructure.db import LoginAttemptRow, SessionRow, UserRow
 
-_USER_FIELDS = ("id", "email", "password_hash", "created_at")
+_USER_FIELDS = ("id", "email", "password_hash", "created_at", "first_name", "last_name")
 _SESSION_FIELDS = (
     "id",
     "user_id",
@@ -61,12 +61,13 @@ class SqlUserRepository:
         self._db = db
         self._tracker = _Tracker(_USER_FIELDS)
 
-    def get(self, user_id: UUID) -> User | None:
-        row = self._db.get(UserRow, user_id)
+    def get(self, user_id: UUID, *, for_update: bool = False) -> User | None:
+        row = self._db.get(UserRow, user_id, with_for_update=for_update)
         return None if row is None else self._tracker.to_entity(User, row)
 
-    def get_by_email(self, email: str) -> User | None:
-        row = self._db.scalar(select(UserRow).where(UserRow.email == email))
+    def get_by_email(self, email: str, *, for_update: bool = False) -> User | None:
+        query = select(UserRow).where(UserRow.email == email)
+        row = self._db.scalar(query.with_for_update() if for_update else query)
         return None if row is None else self._tracker.to_entity(User, row)
 
     def add(self, user: User) -> None:
@@ -88,12 +89,12 @@ class SqlSessionRepository:
         self._db.flush()
         self._db.add(self._tracker.to_row(SessionRow, session))
 
-    def get(self, session_id: UUID) -> Session | None:
-        row = self._db.get(SessionRow, session_id)
+    def get(self, session_id: UUID, *, for_update: bool = False) -> Session | None:
+        row = self._db.get(SessionRow, session_id, with_for_update=for_update)
         return None if row is None else self._tracker.to_entity(Session, row)
 
-    def get_by_refresh_hash(self, token_hash: str) -> Session | None:
-        return self._first(SessionRow.refresh_token_hash == token_hash)
+    def get_by_refresh_hash(self, token_hash: str, *, for_update: bool = False) -> Session | None:
+        return self._first(SessionRow.refresh_token_hash == token_hash, for_update=for_update)
 
     def get_by_previous_refresh_hash(self, token_hash: str) -> Session | None:
         return self._first(SessionRow.previous_refresh_token_hash == token_hash)
@@ -111,8 +112,9 @@ class SqlSessionRepository:
     def sync(self) -> None:
         self._tracker.sync()
 
-    def _first(self, condition) -> Session | None:
-        row = self._db.scalar(select(SessionRow).where(condition))
+    def _first(self, condition, *, for_update: bool = False) -> Session | None:
+        query = select(SessionRow).where(condition)
+        row = self._db.scalar(query.with_for_update() if for_update else query)
         return None if row is None else self._tracker.to_entity(Session, row)
 
     def _all(self, *conditions) -> list[Session]:

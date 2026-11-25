@@ -43,33 +43,34 @@ def log_in(uow, hasher, clock) -> LogIn:
     )
 
 
-def test_registrar_guarda_el_usuario_con_hash_y_correo_normalizado(register, uow, clock) -> None:
-    user = register.execute(" Luis@Example.com", PASSWORD)
+def test_register_saves_user_with_hash_and_normalized_email(register, uow, clock) -> None:
+    user = register.execute(" Luis@Example.com", PASSWORD, "Luis Miguel", "Aguilar García")
 
     assert user.email == "luis@example.com"
+    assert (user.first_name, user.last_name) == ("Luis Miguel", "Aguilar García")
     assert user.password_hash == f"hashed:{PASSWORD}"
     assert user.created_at == clock.now()
     assert uow.users.get_by_email("luis@example.com") == user
     assert uow.commits == 1
 
 
-def test_registrar_un_correo_existente_falla_sin_importar_mayusculas(register) -> None:
-    register.execute("luis@example.com", PASSWORD)
+def test_register_existing_email_fails_regardless_of_case(register) -> None:
+    register.execute("luis@example.com", PASSWORD, "Luis", "Aguilar")
 
     with pytest.raises(EmailAlreadyRegistered):
-        register.execute("LUIS@example.com", PASSWORD)
+        register.execute("LUIS@example.com", PASSWORD, "Luis", "Aguilar")
 
 
-def test_registrar_con_contrasena_corta_falla_y_no_guarda(register, uow) -> None:
+def test_register_with_short_password_fails_and_saves_nothing(register, uow) -> None:
     with pytest.raises(WeakPassword):
-        register.execute("luis@example.com", "corta")
+        register.execute("luis@example.com", "corta", "Luis", "Aguilar")
 
     assert uow.users.by_email == {}
     assert uow.commits == 0
 
 
-def test_iniciar_sesion_crea_una_sesion_y_devuelve_tokens(register, log_in, uow, clock) -> None:
-    user = register.execute("luis@example.com", PASSWORD)
+def test_login_creates_session_and_returns_tokens(register, log_in, uow, clock) -> None:
+    user = register.execute("luis@example.com", PASSWORD, "Luis", "Aguilar")
 
     result = log_in.execute("Luis@Example.com", PASSWORD, "pixel-8-abc", "Pixel 8")
 
@@ -85,8 +86,8 @@ def test_iniciar_sesion_crea_una_sesion_y_devuelve_tokens(register, log_in, uow,
     assert session.is_active(clock.now())
 
 
-def test_contrasena_incorrecta_no_crea_sesion(register, log_in, uow) -> None:
-    register.execute("luis@example.com", PASSWORD)
+def test_wrong_password_creates_no_session(register, log_in, uow) -> None:
+    register.execute("luis@example.com", PASSWORD, "Luis", "Aguilar")
 
     with pytest.raises(InvalidCredentials):
         log_in.execute("luis@example.com", "otra contraseña larga", "pixel-8-abc", "Pixel 8")
@@ -94,7 +95,7 @@ def test_contrasena_incorrecta_no_crea_sesion(register, log_in, uow) -> None:
     assert uow.sessions.items == []
 
 
-def test_correo_inexistente_falla_igual_y_tambien_verifica_un_hash(log_in, hasher) -> None:
+def test_unknown_email_fails_the_same_and_still_verifies_a_hash(log_in, hasher) -> None:
     with pytest.raises(InvalidCredentials):
         log_in.execute("nadie@example.com", PASSWORD, "pixel-8-abc", "Pixel 8")
 
@@ -103,10 +104,8 @@ def test_correo_inexistente_falla_igual_y_tambien_verifica_un_hash(log_in, hashe
     assert len(hasher.verified) == 1
 
 
-def test_volver_a_iniciar_sesion_en_el_mismo_dispositivo_revoca_la_anterior(
-    register, log_in, uow, clock
-) -> None:
-    register.execute("luis@example.com", PASSWORD)
+def test_logging_in_again_on_same_device_revokes_previous(register, log_in, uow, clock) -> None:
+    register.execute("luis@example.com", PASSWORD, "Luis", "Aguilar")
     log_in.execute("luis@example.com", PASSWORD, "pixel-8-abc", "Pixel 8")
     clock.advance(timedelta(minutes=5))
 
@@ -117,10 +116,8 @@ def test_volver_a_iniciar_sesion_en_el_mismo_dispositivo_revoca_la_anterior(
     assert second.is_active(clock.now())
 
 
-def test_iniciar_sesion_en_otro_dispositivo_no_cierra_las_demas(
-    register, log_in, uow, clock
-) -> None:
-    register.execute("luis@example.com", PASSWORD)
+def test_login_on_another_device_keeps_other_sessions(register, log_in, uow, clock) -> None:
+    register.execute("luis@example.com", PASSWORD, "Luis", "Aguilar")
     log_in.execute("luis@example.com", PASSWORD, "pixel-8-abc", "Pixel 8")
 
     log_in.execute("luis@example.com", PASSWORD, "galaxy-s24-xyz", "Galaxy S24")

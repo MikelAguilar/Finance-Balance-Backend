@@ -9,6 +9,7 @@ from auth_service.domain.errors import (
     EmailAlreadyRegistered,
     InvalidCredentials,
     InvalidToken,
+    SessionNotFound,
     TooManyAttempts,
     WrongCurrentPassword,
 )
@@ -23,7 +24,7 @@ class RegisterUser:
         self._hasher = hasher
         self._clock = clock
 
-    def execute(self, email: str, password: str) -> User:
+    def execute(self, email: str, password: str, first_name: str, last_name: str) -> User:
         check_password_policy(password)
         email = normalize_email(email)
         with self._uow_factory() as uow:
@@ -34,6 +35,8 @@ class RegisterUser:
                 email=email,
                 password_hash=self._hasher.hash(password),
                 created_at=self._clock.now(),
+                first_name=first_name,
+                last_name=last_name,
             )
             uow.users.add(user)
             uow.commit()
@@ -94,7 +97,9 @@ class LogIn:
                 retry_after = failures[0] + self._window - now
                 raise TooManyAttempts(math.ceil(retry_after.total_seconds()))
 
-            user = uow.users.get_by_email(email)
+            # Bloquea la cuenta: dos inicios simultáneos en el mismo dispositivo no deben crear
+            # dos sesiones activas (el índice único parcial lo rechazaría con un error).
+            user = uow.users.get_by_email(email, for_update=True)
             password_hash = user.password_hash if user else self._dummy_hash
             if not self._hasher.verify(password_hash, password) or user is None:
                 uow.login_attempts.add_failure(email, now)
@@ -140,7 +145,8 @@ class RefreshSession:
         now = self._clock.now()
         token_hash = self._tokens.hash_refresh_token(refresh_token)
         with self._uow_factory() as uow:
-            session = uow.sessions.get_by_refresh_hash(token_hash)
+            # Bloquea la sesión: si el mismo token llega dos veces a la vez, solo una gana.
+            session = uow.sessions.get_by_refresh_hash(token_hash, for_update=True)
             if session is None:
                 # Si es un refresh token que ya se cambió, alguien lo copió: se cierra la sesión
                 # para el ladrón y para el dueño, que deberá iniciar sesión otra vez.
@@ -199,7 +205,7 @@ class ChangePassword:
         check_password_policy(new_password)
         now = self._clock.now()
         with self._uow_factory() as uow:
-            user = uow.users.get(user_id)
+            user = uow.users.get(user_id, for_update=True)
             if user is None or not self._hasher.verify(user.password_hash, current_password):
                 raise WrongCurrentPassword()
             user.password_hash = self._hasher.hash(new_password)
@@ -217,7 +223,75 @@ class LogOut:
 
     def execute(self, session_id: UUID) -> None:
         with self._uow_factory() as uow:
-            session = uow.sessions.get(session_id)
+            session = uow.sessions.get(session_id, for_update=True)
             if session is not None:
+                session.revoke(self._clock.now())
+                uow.commit()
+
+
+class GetProfile:
+    def __init__(self, uow_factory: Callable[[], UnitOfWork]) -> None:
+        self._uow_factory = uow_factory
+
+    def execute(self, user_id: UUID) -> User:
+        with self._uow_factory() as uow:
+            user = uow.users.get(user_id)
+        # La cuenta pudo borrarse entre la verificación del token y esta consulta.
+        if user is None:
+            raise InvalidToken()
+        return user
+
+
+class UpdateProfile:
+    def __init__(self, uow_factory: Callable[[], UnitOfWork]) -> None:
+        self._uow_factory = uow_factory
+
+    def execute(
+        self, user_id: UUID, *, first_name: str | None = None, last_name: str | None = None
+    ) -> User:
+        """Cambia solo lo que se pasa: None deja ese dato como está."""
+        with self._uow_factory() as uow:
+            user = uow.users.get(user_id, for_update=True)
+            if user is None:
+                raise InvalidToken()
+            if first_name is not None:
+                user.first_name = first_name
+            if last_name is not None:
+                user.last_name = last_name
+            uow.commit()
+        return user
+
+
+class ListSessions:
+    """Dispositivos con sesión activa, del uso más reciente al más antiguo."""
+
+    def __init__(self, uow_factory: Callable[[], UnitOfWork], clock: Clock) -> None:
+        self._uow_factory = uow_factory
+        self._clock = clock
+
+    def execute(self, user_id: UUID) -> list[Session]:
+        now = self._clock.now()
+        with self._uow_factory() as uow:
+            sessions = uow.sessions.list_unrevoked_for_user(user_id)
+        active = [session for session in sessions if session.is_active(now)]
+        # El id desempata para que el orden sea el mismo en cada consulta.
+        return sorted(active, key=lambda s: (s.last_used_at, s.created_at, str(s.id)), reverse=True)
+
+
+class RevokeSession:
+    """Cierra la sesión de un dispositivo del mismo usuario."""
+
+    def __init__(self, uow_factory: Callable[[], UnitOfWork], clock: Clock) -> None:
+        self._uow_factory = uow_factory
+        self._clock = clock
+
+    def execute(self, user_id: UUID, session_id: UUID) -> None:
+        with self._uow_factory() as uow:
+            session = uow.sessions.get(session_id, for_update=True)
+            # Una sesión ajena responde igual que una inexistente: no revela que existe.
+            if session is None or session.user_id != user_id:
+                raise SessionNotFound()
+            # Cerrar una sesión ya cerrada o vencida no es un error: el resultado es el mismo.
+            if session.revoked_at is None:
                 session.revoke(self._clock.now())
                 uow.commit()
