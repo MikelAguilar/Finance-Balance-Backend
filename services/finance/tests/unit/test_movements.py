@@ -131,3 +131,35 @@ def test_a_movement_cannot_be_built_invalid() -> None:
             review_status=ReviewStatus.CONFIRMED,
             owner_cut=date(2026, 12, 5),
         )
+
+
+VALID_PARTS = {
+    "amount_cents": 1,
+    "occurred": OccurredAt(at=NOW, offset_minutes=0),
+    "kind": Normal(),
+    "review_status": ReviewStatus.CONFIRMED,
+    "owner_cut": date(2026, 12, 5),
+}
+
+
+@pytest.mark.parametrize(
+    ("change", "expected"),
+    [
+        ({"occurred": "2026-11-25T03:00:00Z"}, ("occurred_at", "type")),
+        ({"kind": "normal"}, ("kind", "range")),
+        ({"review_status": "confirmed"}, ("review_status", "range")),
+        # datetime hereda de date: un instante no sirve como día de corte.
+        ({"owner_cut": NOW}, ("owner_cut", "type")),
+    ],
+)
+def test_a_movement_built_directly_only_takes_domain_values(change: dict, expected: tuple) -> None:
+    with pytest.raises(InvalidField) as error:
+        Movement(**{**VALID_PARTS, **change})
+    assert (error.value.field, error.value.rule) == expected
+
+
+@pytest.mark.parametrize("rate", [0.03, Decimal("NaN")])
+def test_an_installment_built_directly_needs_a_finite_decimal_rate(rate: object) -> None:
+    with pytest.raises(InvalidField) as error:
+        Installment(months=12, monthly_rate=rate)
+    assert (error.value.field, error.value.rule) == ("monthly_rate", "type")

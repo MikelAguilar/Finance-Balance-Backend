@@ -5,7 +5,6 @@ from uuid import UUID
 from sqlalchemy import (
     BigInteger,
     Boolean,
-    CheckConstraint,
     Date,
     DateTime,
     ForeignKeyConstraint,
@@ -27,6 +26,11 @@ class Base(DeclarativeBase):
     metadata = MetaData(schema=SCHEMA)
 
 
+# Los CHECK con las reglas de entrada viven solo en las migraciones: las pruebas de integración los
+# prueban contra PostgreSQL, y Alembic no compara su texto con estos modelos (repetirlos aquí sería
+# una segunda copia que nadie verifica).
+
+
 class SyncColumns:
     """Columnas que lleva todo registro que se sincroniza con la app.
 
@@ -46,26 +50,14 @@ class SyncColumns:
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
-def sync_constraints(table: str) -> tuple:
-    return (
-        UniqueConstraint("user_id", "idempotency_key", name=f"uq_{table}_user_idempotency_key"),
-        CheckConstraint("version >= 1", name=f"ck_{table}_version"),
-    )
+def unique_idempotency_key(table: str) -> UniqueConstraint:
+    return UniqueConstraint("user_id", "idempotency_key", name=f"uq_{table}_user_idempotency_key")
 
 
 class CardRow(SyncColumns, Base):
     __tablename__ = "cards"
     __table_args__ = (
-        *sync_constraints("cards"),
-        CheckConstraint("length(btrim(name)) > 0", name="ck_cards_name"),
-        CheckConstraint("cut_day BETWEEN 1 AND 31", name="ck_cards_cut_day"),
-        CheckConstraint("personal_limit_cents > 0", name="ck_cards_personal_limit"),
-        CheckConstraint("bank_limit_cents > 0", name="ck_cards_bank_limit"),
-        CheckConstraint(
-            "personal_limit_cents IS NOT NULL OR bank_limit_cents IS NOT NULL",
-            name="ck_cards_at_least_one_limit",
-        ),
-        CheckConstraint("used_at_creation_cents >= 0", name="ck_cards_used_at_creation"),
+        unique_idempotency_key("cards"),
         # Destino de la llave foránea de movements: un movimiento solo apunta a una tarjeta de
         # su misma cuenta.
         UniqueConstraint("id", "user_id", name="uq_cards_id_user"),
@@ -79,34 +71,14 @@ class CardRow(SyncColumns, Base):
     installments_count_against_limit: Mapped[bool] = mapped_column(Boolean)
 
 
-# Cada tipo lleva solo sus campos, y los lleva todos. Los IS NOT NULL no sobran: en un CHECK,
-# una comparación con NULL da NULL, y PostgreSQL deja pasar el NULL.
-MOVEMENT_KIND_RULE = """
-(kind = 'normal' AND months IS NULL AND monthly_rate IS NULL AND payment_source IS NULL)
-OR (kind = 'installment' AND months IS NOT NULL AND monthly_rate IS NOT NULL
-    AND months BETWEEN 1 AND 120 AND monthly_rate >= 0 AND monthly_rate < 1
-    AND payment_source IS NULL)
-OR (kind = 'payment' AND months IS NULL AND monthly_rate IS NULL
-    AND payment_source IS NOT NULL AND payment_source IN ('debit', 'cash'))
-"""
-
-
 class MovementRow(SyncColumns, Base):
     __tablename__ = "movements"
     __table_args__ = (
-        *sync_constraints("movements"),
+        unique_idempotency_key("movements"),
         ForeignKeyConstraint(
             ["card_id", "user_id"],
             [f"{SCHEMA}.cards.id", f"{SCHEMA}.cards.user_id"],
             name="fk_movements_card",
-        ),
-        CheckConstraint("amount_cents > 0", name="ck_movements_amount"),
-        CheckConstraint(
-            "occurred_offset_minutes BETWEEN -720 AND 840", name="ck_movements_occurred_offset"
-        ),
-        CheckConstraint(MOVEMENT_KIND_RULE, name="ck_movements_kind"),
-        CheckConstraint(
-            "review_status IN ('pending_review', 'confirmed')", name="ck_movements_review_status"
         ),
     )
 
@@ -126,14 +98,15 @@ class MovementRow(SyncColumns, Base):
 class MonthlyIncomeRow(SyncColumns, Base):
     __tablename__ = "monthly_income"
     __table_args__ = (
-        *sync_constraints("monthly_income"),
-        CheckConstraint("amount_cents > 0", name="ck_monthly_income_amount"),
-        # Un ingreso vigente por cuenta; los anteriores se conservan con deleted_at.
+        unique_idempotency_key("monthly_income"),
+        # Un ingreso vigente por cuenta; los anteriores se conservan con deleted_at. Alembic no
+        # compara la condición de un índice parcial: la que vale es la de la migración, probada
+        # en test_monthly_income_table.
         Index(
             "uq_monthly_income_user_current",
             "user_id",
             unique=True,
-            postgresql_where=text("deleted_at IS NULL"),
+            postgresql_where=text("deleted_at IS NULL"),  # pragma: no mutate
         ),
     )
 

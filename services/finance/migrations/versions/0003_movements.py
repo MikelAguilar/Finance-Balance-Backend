@@ -13,6 +13,8 @@ down_revision: str | None = "0002_cards"
 branch_labels: str | None = None
 depends_on: str | None = None
 
+# Cada tipo lleva solo sus campos, y los lleva todos. Los IS NOT NULL no sobran: en un CHECK,
+# una comparación con NULL da NULL, y PostgreSQL deja pasar el NULL.
 KIND_RULE = """
 (kind = 'normal' AND months IS NULL AND monthly_rate IS NULL AND payment_source IS NULL)
 OR (kind = 'installment' AND months IS NOT NULL AND monthly_rate IS NOT NULL
