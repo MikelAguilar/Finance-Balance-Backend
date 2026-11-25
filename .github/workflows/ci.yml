@@ -143,7 +143,11 @@ jobs:
       - name: Ningún mutante sobrevive ni queda sin pruebas
         run: |
           uv run mutmut results --all true | tee mutantes.txt
-          ! grep -E ": (survived|no tests|timeout|suspicious|segfault|not checked)" mutantes.txt
+          estados="survived|no tests|timeout|suspicious|segfault|not checked"
+          vivos=$(grep -E ": ($estados)" mutantes.txt | cut -d: -f1 | tr -d ' ' | sort -u)
+          # El diff de cada mutante vivo, para saber qué prueba falta sin adivinar.
+          for mutante in $vivos; do uv run mutmut show "$mutante"; done
+          test -z "$vivos"
 
   docker:
     needs: [calidad, seguridad, integracion]

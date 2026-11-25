@@ -11,7 +11,7 @@ Backend de Finance Balance, una aplicación personal de finanzas para Android. E
 
 ## Estado
 
-En desarrollo. Hoy están disponibles el registro de cuentas, el inicio y cierre de sesión por dispositivo, la renovación de sesión, el cambio de contraseña, el perfil, la lista de dispositivos y la eliminación de la cuenta. El resto se agrega por fases.
+En desarrollo. Hoy están disponibles el registro de cuentas, el inicio y cierre de sesión por dispositivo, la renovación de sesión, el cambio de contraseña, el perfil, la lista de dispositivos y la eliminación de la cuenta. El servicio de finanzas ya existe y solo acepta peticiones con una sesión activa; tarjetas, movimientos y sincronización llegan en las siguientes fases.
 
 ## Arquitectura
 
@@ -20,19 +20,23 @@ Todas las peticiones entran por un **gateway** ([Caddy](https://caddyserver.com/
 | Ruta en el gateway | Servicio | Carpeta |
 |--------------------|----------|---------|
 | `/auth/*` | Autenticación: cuentas, sesiones y dispositivos | `services/auth/` |
-| `/finance/*` | Finanzas y sincronización (llega en una fase próxima) | — |
+| `/finance/*` | Finanzas y sincronización (en construcción). Solo con sesión activa: antes de cada petición el gateway la verifica con autenticación (`forward_auth`) y le entrega el usuario en `X-User-Id`. | `services/finance/` |
 
 ```
 backend/
 ├── gateway/Caddyfile        # reglas del gateway
+├── libs/
+│   └── common/              # código común (paquete service_common): salud, cabeceras y app base
 ├── services/
-│   └── auth/                # servicio de autenticación (paquete auth_service)
-│       ├── src/auth_service/
-│       ├── migrations/      # migraciones de Alembic del servicio
-│       ├── tests/
-│       ├── Dockerfile
-│       └── pyproject.toml   # dependencias del servicio
-├── docker-compose.yml       # db, auth y gateway
+│   ├── auth/                # servicio de autenticación (paquete auth_service)
+│   │   ├── src/auth_service/
+│   │   ├── migrations/      # migraciones de Alembic del servicio
+│   │   ├── tests/
+│   │   ├── Dockerfile
+│   │   └── pyproject.toml   # dependencias del servicio
+│   └── finance/             # servicio de finanzas (paquete finance_service)
+├── tools/crap.py            # CRAP por función (complejidad y cobertura)
+├── docker-compose.yml       # db, auth, finance y gateway
 ├── pyproject.toml           # workspace de uv y herramientas de desarrollo
 └── uv.lock                  # versiones exactas de todo el workspace
 ```
@@ -86,6 +90,7 @@ Swagger solo está disponible en desarrollo. En producción se desactiva.
 |--------|----------------------|-------------|
 | GET    | `/health`            | Indica si el gateway está activo. |
 | GET    | `/auth/health`       | Indica si el servicio de autenticación está activo. |
+| GET    | `/finance/health`    | Indica si el servicio de finanzas está activo. Requiere sesión activa (`401` sin ella). |
 | POST   | `/auth/register`     | Crea una cuenta con `first_name`, `last_name` (todos los apellidos en un campo; 1 a 100 caracteres cada uno, sin caracteres de control), correo y contraseña (12 a 128 caracteres). `201`; `409` si el correo ya existe; `422` si falta un dato o no es válido. |
 | POST   | `/auth/sessions`     | Inicia sesión en un dispositivo (`device_id`, `device_name`). Devuelve el token de acceso (15 min) y el refresh token (90 días). `401` si las credenciales no son válidas; `429` (con `Retry-After`) tras 5 fallos del mismo correo en 15 minutos. |
 | POST   | `/auth/sessions/refresh` | Entrega tokens nuevos a cambio del refresh token, que deja de servir. Reutilizar uno viejo cierra la sesión. `401` si no es válido. |
@@ -120,6 +125,17 @@ Las pruebas de integración usan PostgreSQL real y se omiten si no defines `TEST
 
 ```bash
 TEST_DATABASE_URL=postgresql+psycopg://usuario:clave@localhost:5432/pruebas uv run pytest --cov
+```
+
+El CI también mide la calidad con herramientas gratuitas:
+
+- **Duplicación** (pylint `duplicate-code`): ningún bloque de 6 líneas repetido en el código fuente.
+- **CRAP** (`tools/crap.py`, con radon y la cobertura): ninguna función llega a 10.
+- **Mutación** (mutmut, un job por paquete): ningún mutante sobrevive. mutmut no corre en Windows.
+
+```bash
+uv run pytest --cov --cov-report=json && uv run python tools/crap.py coverage.json
+uv run pylint --disable=all --enable=duplicate-code --min-similarity-lines=6 libs/common/src services/auth/src services/finance/src tools/crap.py
 ```
 
 Si cambias la API a propósito, regenera el contrato y revísalo en el PR:

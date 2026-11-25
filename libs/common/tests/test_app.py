@@ -16,7 +16,8 @@ def test_swagger_available_in_development(make_client) -> None:
     client = make_client("development")
 
     assert client.get("/docs").status_code == 200
-    assert client.get("/openapi.json").json()["info"]["title"] == "Servicio de prueba"
+    info = client.get("/openapi.json").json()["info"]
+    assert info == {"title": "Servicio de prueba", "version": "0.1.0"}
     # ReDoc no se usa: con Swagger basta.
     assert client.get("/redoc").status_code == 404
 

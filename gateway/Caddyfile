@@ -29,7 +29,8 @@
 			request_header -X-User-Id
 			# Swagger no lleva token (el navegador no lo manda). Solo existe en desarrollo: en
 			# producción el servicio responde 404.
-			handle /docs /openapi.json {
+			@docs path /docs /openapi.json
+			handle @docs {
 				reverse_proxy finance:8000
 			}
 			forward_auth auth:8000 {
