@@ -139,6 +139,8 @@
 
     {"name": "ingreso mensual", "entity": "monthly_income", "error": null,
      "input": {"amount_cents": 2500000}},
+    {"name": "ingreso de 1 centavo", "entity": "monthly_income", "error": null,
+     "input": {"amount_cents": 1}},
     {"name": "ingreso de 0", "entity": "monthly_income", "error": {"field": "amount_cents", "rule": "range"},
      "input": {"amount_cents": 0}},
     {"name": "ingreso como texto", "entity": "monthly_income", "error": {"field": "amount_cents", "rule": "type"},

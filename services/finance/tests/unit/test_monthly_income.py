@@ -13,6 +13,7 @@ def rejected(data: dict) -> tuple[str, str]:
 def test_a_monthly_income_in_cents() -> None:
     assert parse_monthly_income({"amount_cents": 2_500_000}) == MonthlyIncome(2_500_000)
     assert parse_monthly_income({"amount_cents": MAX_CENTS}).amount_cents == MAX_CENTS
+    assert parse_monthly_income({"amount_cents": 1}).amount_cents == 1
 
 
 @pytest.mark.parametrize(
