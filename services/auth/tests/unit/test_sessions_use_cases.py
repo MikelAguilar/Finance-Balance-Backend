@@ -49,7 +49,7 @@ def hasher() -> FakeHasher:
 
 @pytest.fixture
 def user(uow, hasher, clock):
-    return RegisterUser(lambda: uow, hasher, clock).execute(EMAIL, PASSWORD)
+    return RegisterUser(lambda: uow, hasher, clock).execute(EMAIL, PASSWORD, "Luis", "Aguilar")
 
 
 @pytest.fixture
@@ -321,7 +321,9 @@ def test_blocked_attempts_are_not_recorded_and_do_not_extend_the_block(user, log
 
 
 def test_failures_of_one_email_do_not_block_another(user, log_in, uow, hasher, clock):
-    RegisterUser(lambda: uow, hasher, clock).execute("otra@example.com", PASSWORD)
+    RegisterUser(lambda: uow, hasher, clock).execute(
+        "otra@example.com", PASSWORD, "Luis", "Aguilar"
+    )
     for _ in range(5):
         fail(log_in)
 
@@ -412,7 +414,9 @@ def test_access_token_still_works_after_refresh_until_it_expires(
 def test_a_valid_token_of_another_users_session_is_rejected(
     user, log_in, authenticate, uow, hasher, clock, tokens
 ):
-    RegisterUser(lambda: uow, hasher, clock).execute("otra@example.com", PASSWORD)
+    RegisterUser(lambda: uow, hasher, clock).execute(
+        "otra@example.com", PASSWORD, "Luis", "Aguilar"
+    )
     other = log_in.execute("otra@example.com", PASSWORD, "pixel-8-abc", "Tel")
     mine = start(log_in)
     # Token firmado correctamente, pero con el sid de otra persona.

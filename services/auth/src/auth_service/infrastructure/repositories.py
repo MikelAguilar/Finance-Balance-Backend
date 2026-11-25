@@ -18,7 +18,7 @@ from auth_service.domain.errors import EmailAlreadyRegistered
 from auth_service.domain.model import Session, User
 from auth_service.infrastructure.db import LoginAttemptRow, SessionRow, UserRow
 
-_USER_FIELDS = ("id", "email", "password_hash", "created_at", "name")
+_USER_FIELDS = ("id", "email", "password_hash", "created_at", "first_name", "last_name")
 _SESSION_FIELDS = (
     "id",
     "user_id",

@@ -9,7 +9,8 @@ PASSWORD = "una contraseña larga"
 
 
 def register(client, email="luis@example.com", password=PASSWORD):
-    return client.post("/register", json={"email": email, "password": password})
+    body = {"email": email, "password": password, "first_name": "Luis", "last_name": "Aguilar"}
+    return client.post("/register", json=body)
 
 
 def log_in(client, email="luis@example.com", password=PASSWORD, device_id="d1", device_name="D"):

@@ -69,13 +69,15 @@ def kinds(results: list[object]) -> Counter:
 
 
 def test_simultaneous_registrations_of_the_same_email_create_exactly_one_account(services):
-    results = run_at_once(lambda: services["register"].execute("luis@example.com", PASSWORD))
+    results = run_at_once(
+        lambda: services["register"].execute("luis@example.com", PASSWORD, "Luis", "Aguilar")
+    )
 
     assert kinds(results) == Counter({"ok": 1, EmailAlreadyRegistered.__name__: THREADS - 1})
 
 
 def test_simultaneous_logins_on_the_same_device_leave_exactly_one_active_session(services):
-    services["register"].execute("luis@example.com", PASSWORD)
+    services["register"].execute("luis@example.com", PASSWORD, "Luis", "Aguilar")
 
     results = run_at_once(
         lambda: services["log_in"].execute("luis@example.com", PASSWORD, "pixel-8-abc", "Pixel 8")
@@ -88,7 +90,7 @@ def test_simultaneous_logins_on_the_same_device_leave_exactly_one_active_session
 
 
 def test_simultaneous_logins_on_different_devices_all_stay_active(services):
-    services["register"].execute("luis@example.com", PASSWORD)
+    services["register"].execute("luis@example.com", PASSWORD, "Luis", "Aguilar")
     counter = iter(range(THREADS))
     lock = threading.Lock()
 
@@ -106,7 +108,7 @@ def test_simultaneous_logins_on_different_devices_all_stay_active(services):
 
 
 def test_the_same_refresh_token_used_at_once_works_only_once(services):
-    services["register"].execute("luis@example.com", PASSWORD)
+    services["register"].execute("luis@example.com", PASSWORD, "Luis", "Aguilar")
     first = services["log_in"].execute("luis@example.com", PASSWORD, "pixel-8-abc", "Pixel 8")
 
     results = run_at_once(lambda: services["refresh"].execute(first.refresh_token))
@@ -120,7 +122,7 @@ def test_the_same_refresh_token_used_at_once_works_only_once(services):
 
 
 def test_many_simultaneous_wrong_passwords_end_up_blocking_the_email(services):
-    services["register"].execute("luis@example.com", PASSWORD)
+    services["register"].execute("luis@example.com", PASSWORD, "Luis", "Aguilar")
 
     run_at_once(
         lambda: services["log_in"].execute("luis@example.com", "equivocada" * 2, "d", "d"), times=10
@@ -133,7 +135,7 @@ def test_many_simultaneous_wrong_passwords_end_up_blocking_the_email(services):
 
 
 def test_closing_the_same_device_many_times_at_once_always_succeeds(services):
-    user = services["register"].execute("luis@example.com", PASSWORD)
+    user = services["register"].execute("luis@example.com", PASSWORD, "Luis", "Aguilar")
     tablet = services["log_in"].execute("luis@example.com", PASSWORD, "tableta", "Tableta")
 
     results = run_at_once(lambda: services["revoke"].execute(user.id, tablet.session_id))
@@ -145,7 +147,7 @@ def test_closing_the_same_device_many_times_at_once_always_succeeds(services):
 
 @pytest.mark.parametrize("round_", range(10))
 def test_closing_a_device_while_it_refreshes_never_leaves_it_open(services, round_):
-    user = services["register"].execute("luis@example.com", PASSWORD)
+    user = services["register"].execute("luis@example.com", PASSWORD, "Luis", "Aguilar")
     tablet = services["log_in"].execute("luis@example.com", PASSWORD, "tableta", "Tableta")
     actions = iter(
         [
@@ -174,18 +176,46 @@ def test_closing_a_device_while_it_refreshes_never_leaves_it_open(services, roun
             services["refresh"].execute(result.refresh_token)
 
 
-def test_simultaneous_name_changes_keep_exactly_one_of_them(services):
-    user = services["register"].execute("luis@example.com", PASSWORD)
-    names = iter(f"Nombre {i}" for i in range(THREADS))
+def test_simultaneous_full_renames_never_mix_two_of_them(services):
+    user = services["register"].execute("luis@example.com", PASSWORD, "Luis", "Aguilar")
+    numbers = iter(range(THREADS))
     lock = threading.Lock()
 
     def rename():
         with lock:
-            name = next(names)
-        return services["update_profile"].execute(user.id, name).name
+            i = next(numbers)
+        updated = services["update_profile"].execute(
+            user.id, first_name=f"Nombre {i}", last_name=f"Apellido {i}"
+        )
+        return updated.first_name, updated.last_name
 
     results = run_at_once(rename)
 
     assert kinds(results) == Counter({"ok": THREADS})
     with services["uow"]() as uow:
-        assert uow.users.get(user.id).name in results
+        stored = uow.users.get(user.id)
+    # Gana uno completo: nunca el nombre de un cambio con el apellido de otro.
+    assert (stored.first_name, stored.last_name) in results
+    assert stored.first_name.split()[1] == stored.last_name.split()[1]
+
+
+def test_changing_first_and_last_name_at_once_loses_neither(services):
+    """Uno cambia el nombre y otro el apellido al mismo tiempo: los dos cambios se quedan."""
+    user = services["register"].execute("luis@example.com", PASSWORD, "Luis", "Aguilar")
+    numbers = iter(range(THREADS))
+    lock = threading.Lock()
+
+    def rename():
+        with lock:
+            i = next(numbers)
+        if i % 2:
+            return services["update_profile"].execute(user.id, first_name=f"Nombre {i}")
+        return services["update_profile"].execute(user.id, last_name=f"Apellido {i}")
+
+    results = run_at_once(rename)
+
+    assert kinds(results) == Counter({"ok": THREADS})
+    with services["uow"]() as uow:
+        stored = uow.users.get(user.id)
+    assert stored.first_name.startswith("Nombre ")
+    assert stored.last_name.startswith("Apellido ")

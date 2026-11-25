@@ -23,7 +23,7 @@ from auth_service.domain.model import (
     normalize_email,
 )
 from auth_service.infrastructure.security import JwtTokenService
-from auth_service.interfaces.http.auth import UpdateProfileRequest
+from auth_service.interfaces.http.auth import RegisterRequest, UpdateProfileRequest
 
 SECRET = "s" * 32
 TOKENS = JwtTokenService(SECRET, access_token_minutes=15)
@@ -209,15 +209,15 @@ def test_new_refresh_tokens_do_not_repeat() -> None:
     assert len(generated) == 5000
 
 
-@given(st.text(max_size=150))
-def test_accepted_profile_names_are_trimmed_short_and_without_control_characters(
-    text: str,
+@given(st.text(max_size=150), st.sampled_from(["first_name", "last_name"]))
+def test_accepted_names_are_trimmed_short_and_without_control_characters(
+    text: str, field: str
 ) -> None:
     def has_control(value: str) -> bool:
         return any(unicodedata.category(c) == "Cc" for c in value)
 
     try:
-        name = UpdateProfileRequest(name=text).name
+        name = getattr(UpdateProfileRequest(**{field: text}), field)
     except ValidationError:
         # Solo se rechaza lo que de verdad incumple una regla.
         stripped = text.strip()
@@ -226,3 +226,21 @@ def test_accepted_profile_names_are_trimmed_short_and_without_control_characters
     assert name == text.strip()
     assert 1 <= len(name) <= 100
     assert not has_control(name)
+
+
+@given(st.text(max_size=150), st.text(max_size=150))
+def test_registration_accepts_names_exactly_when_the_profile_does(first: str, last: str) -> None:
+    """Registro y perfil aplican la misma regla: lo que uno acepta, el otro también."""
+
+    def accepted(model, **fields) -> bool:
+        try:
+            model(**fields)
+        except ValidationError:
+            return False
+        return True
+
+    base = {"email": "luis@example.com", "password": "x" * 12}
+    assert accepted(RegisterRequest, **base, first_name=first, last_name=last) == (
+        accepted(UpdateProfileRequest, first_name=first)
+        and accepted(UpdateProfileRequest, last_name=last)
+    )

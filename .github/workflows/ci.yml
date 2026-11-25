@@ -112,7 +112,8 @@ jobs:
           api=http://localhost:8000/auth
           json="Content-Type: application/json"
           curl --fail -X POST "$api/register" -H "$json" \
-            -d '{"email": "ci@example.com", "password": "contraseña de prueba de CI"}'
+            -d '{"email": "ci@example.com", "password": "contraseña de prueba de CI", "first_name": "Prueba", "last_name": "de CI"}' \
+            | jq -e '.first_name == "Prueba" and .last_name == "de CI"'
           tokens=$(curl --fail -X POST "$api/sessions" -H "$json" \
             -d '{"email": "ci@example.com", "password": "contraseña de prueba de CI", "device_id": "ci", "device_name": "CI"}')
           refresh=$(echo "$tokens" | jq -r .refresh_token)
@@ -124,19 +125,25 @@ jobs:
           api=http://localhost:8000/auth
           json="Content-Type: application/json"
           body='{"email": "perfil@example.com", "password": "contraseña de prueba de CI"'
-          curl --fail -X POST "$api/register" -H "$json" -d "$body}"
+          curl --fail -X POST "$api/register" -H "$json" \
+            -d "$body, \"first_name\": \"Luis Miguel\", \"last_name\": \"Aguilar García\"}"
           phone=$(curl --fail -X POST "$api/sessions" -H "$json" \
             -d "$body, \"device_id\": \"telefono\", \"device_name\": \"Teléfono\"}" | jq -r .access_token)
           tablet=$(curl --fail -X POST "$api/sessions" -H "$json" \
             -d "$body, \"device_id\": \"tableta\", \"device_name\": \"Tableta\"}")
           curl --fail -X PATCH "$api/me" -H "$json" -H "Authorization: Bearer $phone" \
-            -d '{"name": "Luis 🙂"}' | jq -e '.name == "Luis 🙂"'
+            -d '{"first_name": "Luis 🙂"}' \
+            | jq -e '.first_name == "Luis 🙂" and .last_name == "Aguilar García"'
           curl --fail "$api/sessions" -H "Authorization: Bearer $phone" | jq -e 'length == 2'
           tablet_id=$(echo "$tablet" | jq -r .session_id)
           curl --fail -X DELETE "$api/sessions/$tablet_id" -H "Authorization: Bearer $phone"
           code=$(curl -s -o /dev/null -w "%{http_code}" "$api/me" \
             -H "Authorization: Bearer $(echo "$tablet" | jq -r .access_token)")
           test "$code" = "401"
+          # Sin apellido, el registro se rechaza.
+          code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$api/register" -H "$json" \
+            -d '{"email": "sin.apellido@example.com", "password": "contraseña de prueba de CI", "first_name": "Ana"}')
+          test "$code" = "422"
       # El gateway rechaza cuerpos de más de 1 MB.
       - name: Cuerpo demasiado grande → 413
         run: |

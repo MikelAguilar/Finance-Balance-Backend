@@ -7,7 +7,15 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import AfterValidator, BaseModel, ConfigDict, EmailStr, Field, StringConstraints
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    EmailStr,
+    Field,
+    StringConstraints,
+    field_validator,
+)
 
 from auth_service.application.use_cases import (
     AuthContext,
@@ -57,7 +65,8 @@ def _email_limits(value: str) -> str:
 
 
 Email = Annotated[EmailStr, AfterValidator(_email_limits)]
-# Se recortan los espacios de los extremos: «   » queda vacío y se rechaza.
+# Se recortan los espacios de los extremos: «   » queda vacío y se rechaza. Sirve para nombres,
+# apellidos y dispositivos: se aceptan acentos, ñ, guiones, apóstrofos y espacios en medio.
 ShortText = Annotated[
     str,
     StringConstraints(strip_whitespace=True, min_length=1, max_length=100),
@@ -75,12 +84,27 @@ class RegisterRequest(StrictRequest):
     email: Email
     # El mínimo lo valida el dominio; el máximo aquí evita procesar textos enormes.
     password: str = Field(max_length=MAX_PASSWORD_LENGTH)
+    first_name: ShortText
+    # Todos los apellidos en un solo campo: «Aguilar García», o uno solo si la persona tiene uno.
+    last_name: ShortText
 
 
 class UserResponse(BaseModel):
     id: UUID
     email: str
+    first_name: str
+    last_name: str
     created_at: datetime
+
+    @classmethod
+    def from_user(cls, user: User) -> "UserResponse":
+        return cls(
+            id=user.id,
+            email=user.email,
+            first_name=user.first_name,
+            last_name=user.last_name,
+            created_at=user.created_at,
+        )
 
 
 class LoginRequest(StrictRequest):
@@ -118,21 +142,19 @@ class TokenResponse(BaseModel):
         )
 
 
-class ProfileResponse(BaseModel):
-    id: UUID
-    email: str
-    name: str | None
-    created_at: datetime
-
-    @classmethod
-    def from_user(cls, user: User) -> "ProfileResponse":
-        return cls(id=user.id, email=user.email, name=user.name, created_at=user.created_at)
-
-
 class UpdateProfileRequest(StrictRequest):
-    """Solo cambia lo que se envía. `"name": null` borra el nombre."""
+    """Solo cambia lo que se envía; un campo ausente queda como está."""
 
-    name: ShortText | None = None
+    first_name: ShortText | None = None
+    last_name: ShortText | None = None
+
+    @field_validator("first_name", "last_name", mode="before")
+    @classmethod
+    def _cannot_be_cleared(cls, value: object) -> object:
+        # Solo corre si el campo viene en el cuerpo: el valor por defecto no se valida.
+        if value is None:
+            raise ValueError("El nombre y el apellido son obligatorios: no se pueden borrar.")
+        return value
 
 
 class SessionResponse(BaseModel):
@@ -228,19 +250,19 @@ UNAUTHORIZED = {401: {"model": ErrorResponse}}
     response_model=UserResponse,
     responses={
         409: {"model": ErrorResponse},
-        422: {"description": "Correo o contraseña inválidos"},
+        422: {"description": "Correo, contraseña, nombre o apellido inválidos"},
     },
 )
 def register(
     body: RegisterRequest, register_user: Annotated[RegisterUser, Depends(get_register_user)]
 ) -> UserResponse:
     try:
-        user = register_user.execute(body.email, body.password)
+        user = register_user.execute(body.email, body.password, body.first_name, body.last_name)
     except EmailAlreadyRegistered as error:
         raise HTTPException(status.HTTP_409_CONFLICT, "El correo ya está registrado.") from error
     except WeakPassword as error:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error)) from error
-    return UserResponse(id=user.id, email=user.email, created_at=user.created_at)
+    return UserResponse.from_user(user)
 
 
 @router.post(
@@ -307,32 +329,34 @@ def revoke_session(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.get("/me", response_model=ProfileResponse, responses=UNAUTHORIZED)
+@router.get("/me", response_model=UserResponse, responses=UNAUTHORIZED)
 def get_profile(
     session: CurrentSession, use_case: Annotated[GetProfile, Depends(get_get_profile)]
-) -> ProfileResponse:
+) -> UserResponse:
     try:
-        return ProfileResponse.from_user(use_case.execute(session.user_id))
+        return UserResponse.from_user(use_case.execute(session.user_id))
     except InvalidToken as error:
         raise unauthorized("La cuenta ya no existe.") from error
 
 
-@router.patch("/me", response_model=ProfileResponse, responses=UNAUTHORIZED)
+@router.patch("/me", response_model=UserResponse, responses=UNAUTHORIZED)
 def update_profile(
     body: UpdateProfileRequest,
     session: CurrentSession,
     get_use_case: Annotated[GetProfile, Depends(get_get_profile)],
     update_use_case: Annotated[UpdateProfile, Depends(get_update_profile)],
-) -> ProfileResponse:
+) -> UserResponse:
     try:
         # Un cuerpo vacío ({}) no cambia nada: se devuelve el perfil tal como está.
-        if "name" in body.model_fields_set:
-            user = update_use_case.execute(session.user_id, body.name)
+        if body.model_fields_set:
+            user = update_use_case.execute(
+                session.user_id, first_name=body.first_name, last_name=body.last_name
+            )
         else:
             user = get_use_case.execute(session.user_id)
     except InvalidToken as error:
         raise unauthorized("La cuenta ya no existe.") from error
-    return ProfileResponse.from_user(user)
+    return UserResponse.from_user(user)
 
 
 @router.put(

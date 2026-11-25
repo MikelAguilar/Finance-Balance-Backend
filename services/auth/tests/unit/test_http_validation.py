@@ -24,6 +24,29 @@ VALID_LOGIN = {
     "device_id": "pixel-8-abc",
     "device_name": "Pixel 8",
 }
+VALID_REGISTER = {
+    "email": "luis@example.com",
+    "password": "una contraseña larga",
+    "first_name": "Luis Miguel",
+    "last_name": "Aguilar García",
+}
+# Nombres, apellidos y dispositivos comparten las mismas reglas de texto.
+INVALID_SHORT_TEXTS = [
+    pytest.param("", id="vacío"),
+    pytest.param("   ", id="solo espacios"),
+    pytest.param("\t\n ", id="tabulador y salto"),
+    pytest.param("x" * 101, id="101 caracteres"),
+    pytest.param("Lu\x00is", id="carácter nulo"),
+    pytest.param("\x1f", id="separador de unidad"),
+    pytest.param("Luis\tMiguel", id="tabulador en medio"),
+    pytest.param("Luis\x7f", id="DEL"),
+    pytest.param("Lu\x85is", id="control C1 en medio"),
+    pytest.param("Pixel\x1b[31m", id="escape de terminal"),
+    pytest.param(123, id="número"),
+    pytest.param(True, id="booleano"),
+    pytest.param(["Luis"], id="lista"),
+    pytest.param({"first": "Luis"}, id="objeto"),
+]
 
 
 @pytest.fixture
@@ -97,33 +120,42 @@ def test_unknown_fields_are_rejected(client) -> None:
     ],
 )
 def test_invalid_emails_are_rejected(client, email) -> None:
-    assert client.post("/register", json={"email": email, "password": "x" * 12}).status_code == 422
+    assert client.post("/register", json=VALID_REGISTER | {"email": email}).status_code == 422
 
 
 @pytest.mark.parametrize("field", ["device_id", "device_name"])
-@pytest.mark.parametrize(
-    "value",
-    [
-        "",
-        "   ",  # solo espacios
-        "\t\n",
-        "x" * 101,
-        "con\x00nulo",  # PostgreSQL no guarda el carácter nulo: debe rechazarse antes
-        "\x1f",  # carácter de control que Pydantic no recorta como espacio
-        "Pixel\x1b[31m",  # secuencia de escape de terminal
-    ],
-)
+@pytest.mark.parametrize("value", INVALID_SHORT_TEXTS)
 def test_invalid_device_fields_are_rejected(client, field, value) -> None:
     assert client.post("/sessions", json=VALID_LOGIN | {field: value}).status_code == 422
 
 
-@pytest.mark.parametrize("path,field", [("/register", "password"), ("/sessions", "password")])
-def test_password_longer_than_128_is_rejected_before_hashing(client, path, field) -> None:
-    body = VALID_LOGIN | {field: "x" * 129}
-    if path == "/register":
-        body = {"email": body["email"], "password": body["password"]}
+@pytest.mark.parametrize("path,body", [("/register", VALID_REGISTER), ("/sessions", VALID_LOGIN)])
+def test_password_longer_than_128_is_rejected_before_hashing(client, path, body) -> None:
+    assert client.post(path, json=body | {"password": "x" * 129}).status_code == 422
 
-    assert client.post(path, json=body).status_code == 422
+
+@pytest.mark.parametrize("missing", list(VALID_REGISTER))
+def test_register_without_a_required_field_returns_422(client, missing) -> None:
+    body = {k: v for k, v in VALID_REGISTER.items() if k != missing}
+
+    response = client.post("/register", json=body)
+
+    assert response.status_code == 422
+    assert response.json()["detail"][0]["loc"] == ["body", missing]
+
+
+@pytest.mark.parametrize("field", ["first_name", "last_name"])
+@pytest.mark.parametrize("value", [*INVALID_SHORT_TEXTS, pytest.param(None, id="nulo")])
+def test_register_with_an_invalid_first_or_last_name_returns_422(client, field, value) -> None:
+    assert client.post("/register", json=VALID_REGISTER | {field: value}).status_code == 422
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [{"name": "Luis"}, {"is_admin": True}, {"id": str(uuid4())}, {"created_at": "2020-01-01"}],
+)
+def test_register_rejects_fields_it_does_not_know(client, extra) -> None:
+    assert client.post("/register", json=VALID_REGISTER | extra).status_code == 422
 
 
 def test_huge_refresh_token_is_rejected(client) -> None:
@@ -184,7 +216,7 @@ BAD_AUTHORIZATION = [
         ("DELETE", "/sessions/current", None),
         ("PUT", "/password", {"current_password": "x" * 12, "new_password": "y" * 12}),
         ("GET", "/me", None),
-        ("PATCH", "/me", {"name": "Luis"}),
+        ("PATCH", "/me", {"first_name": "Luis"}),
         ("GET", "/sessions", None),
         ("DELETE", f"/sessions/{uuid4()}", None),
     ],
@@ -267,26 +299,16 @@ def test_unknown_paths_return_404(client, path) -> None:
 # ------------------------------------------------------------------ perfil y dispositivos
 
 
-@pytest.mark.parametrize(
-    "name",
-    [
-        pytest.param("", id="vacío"),
-        pytest.param("   ", id="solo espacios"),
-        pytest.param("\t\n ", id="tabulador y salto"),
-        pytest.param("x" * 101, id="101 caracteres"),
-        pytest.param("Lu\x00is", id="carácter nulo"),
-        pytest.param("\x1f", id="separador de unidad"),
-        pytest.param("Luis\tMiguel", id="tabulador en medio"),
-        pytest.param("Luis\x7f", id="DEL"),
-        pytest.param("Lu\x85is", id="control C1 en medio"),
-        pytest.param(123, id="número"),
-        pytest.param(True, id="booleano"),
-        pytest.param(["Luis"], id="lista"),
-        pytest.param({"first": "Luis"}, id="objeto"),
-    ],
-)
-def test_invalid_profile_names_are_rejected(signed_in, name) -> None:
-    assert signed_in.patch("/me", json={"name": name}).status_code == 422
+@pytest.mark.parametrize("field", ["first_name", "last_name"])
+@pytest.mark.parametrize("value", [*INVALID_SHORT_TEXTS, pytest.param(None, id="nulo")])
+def test_invalid_profile_names_are_rejected(signed_in, field, value) -> None:
+    assert signed_in.patch("/me", json={field: value}).status_code == 422
+
+
+def test_null_name_explains_that_it_cannot_be_cleared(signed_in) -> None:
+    response = signed_in.patch("/me", json={"last_name": None})
+
+    assert "no se pueden borrar" in response.json()["detail"][0]["msg"]
 
 
 @pytest.mark.parametrize(
@@ -295,19 +317,20 @@ def test_invalid_profile_names_are_rejected(signed_in, name) -> None:
         pytest.param({"email": "otro@example.com"}, id="cambiar correo"),
         pytest.param({"password_hash": "x"}, id="cambiar hash"),
         pytest.param({"id": str(uuid4())}, id="cambiar id"),
-        pytest.param({"name": "Luis", "is_admin": True}, id="campo extra"),
+        pytest.param({"name": "Luis"}, id="campo name antiguo"),
+        pytest.param({"first_name": "Luis", "is_admin": True}, id="campo extra"),
         pytest.param(["Luis"], id="lista en vez de objeto"),
         pytest.param("Luis", id="texto en vez de objeto"),
     ],
 )
-def test_profile_update_only_accepts_the_name(signed_in, body) -> None:
+def test_profile_update_only_accepts_first_and_last_name(signed_in, body) -> None:
     # El correo y la contraseña tienen sus propios flujos; aquí se rechazan.
     assert signed_in.patch("/me", json=body).status_code == 422
 
 
 def test_profile_update_rejects_malformed_json(signed_in) -> None:
     response = signed_in.patch(
-        "/me", content=b'{"name": ', headers={"Content-Type": "application/json"}
+        "/me", content=b'{"first_name": ', headers={"Content-Type": "application/json"}
     )
 
     assert response.status_code == 422
@@ -337,11 +360,13 @@ def test_session_ids_with_extra_path_segments_return_404(signed_in) -> None:
 class _AccountGone:
     """Simula que la cuenta se borró entre la verificación del token y la consulta."""
 
-    def execute(self, *args):
+    def execute(self, *args, **kwargs):
         raise InvalidToken()
 
 
-@pytest.mark.parametrize("method,body", [("GET", None), ("PATCH", {"name": "Luis"}), ("PATCH", {})])
+@pytest.mark.parametrize(
+    "method,body", [("GET", None), ("PATCH", {"last_name": "Aguilar"}), ("PATCH", {})]
+)
 def test_profile_of_an_account_deleted_mid_request_returns_401(signed_in, method, body) -> None:
     signed_in.app.state.get_profile = _AccountGone()
     signed_in.app.state.update_profile = _AccountGone()

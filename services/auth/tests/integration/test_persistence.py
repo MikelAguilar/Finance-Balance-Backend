@@ -8,6 +8,7 @@ import pytest
 from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
+from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from auth_service.domain.errors import EmailAlreadyRegistered
@@ -26,7 +27,14 @@ def uow_factory(settings):
 
 
 def new_user(email="luis@example.com") -> User:
-    return User(id=uuid4(), email=email, password_hash="hash", created_at=NOW)
+    return User(
+        id=uuid4(),
+        email=email,
+        password_hash="hash",
+        created_at=NOW,
+        first_name="Luis Miguel",
+        last_name="Aguilar García",
+    )
 
 
 def new_session(user_id, device_id="pixel-8-abc") -> Session:
@@ -52,22 +60,29 @@ def test_saved_user_round_trips(uow_factory) -> None:
         assert uow.users.get_by_email("luis@example.com") == user
 
 
-def test_profile_name_round_trips_and_can_be_cleared(uow_factory) -> None:
+def test_names_round_trip_with_any_unicode_and_up_to_100_characters(uow_factory) -> None:
     user = new_user()
     with uow_factory() as uow:
         uow.users.add(user)
         uow.commit()
 
     with uow_factory() as uow:
-        uow.users.get(user.id).name = "Luis 🙂"
+        stored = uow.users.get(user.id)
+        stored.first_name = "Zoë 🙂 李"
+        stored.last_name = "ñ" * 100
         uow.commit()
     with uow_factory() as uow:
         stored = uow.users.get(user.id)
-        assert stored.name == "Luis 🙂"
-        stored.name = None
+        assert (stored.first_name, stored.last_name) == ("Zoë 🙂 李", "ñ" * 100)
+
+
+@pytest.mark.parametrize("field", ["first_name", "last_name"])
+def test_database_rejects_a_user_without_first_or_last_name(uow_factory, field) -> None:
+    user = new_user()
+    setattr(user, field, None)
+    with pytest.raises(IntegrityError), uow_factory() as uow:
+        uow.users.add(user)
         uow.commit()
-    with uow_factory() as uow:
-        assert uow.users.get(user.id).name is None
 
 
 def test_nothing_is_saved_without_commit(uow_factory) -> None:
@@ -130,3 +145,50 @@ def test_models_match_migrations(engine) -> None:
 def test_migrations_downgrade_and_upgrade(alembic_config, engine) -> None:
     command.downgrade(alembic_config, "base")
     command.upgrade(alembic_config, "head")
+
+
+def test_migration_0005_keeps_existing_names_both_ways(alembic_config, engine) -> None:
+    """Las cuentas que ya existían no pierden su nombre al subir ni al bajar la migración."""
+    command.downgrade(alembic_config, "0004_user_name")
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO auth.users (id, email, password_hash, created_at, name) VALUES "
+                    "(gen_random_uuid(), 'con@example.com', 'h', now(), 'Luis Miguel'), "
+                    "(gen_random_uuid(), 'sin@example.com', 'h', now(), NULL)"
+                )
+            )
+
+        command.upgrade(alembic_config, "head")
+        with engine.connect() as connection:
+            upgraded = connection.execute(
+                text("SELECT email, first_name, last_name FROM auth.users ORDER BY email")
+            ).all()
+        assert [tuple(row) for row in upgraded] == [
+            ("con@example.com", "Luis Miguel", ""),
+            ("sin@example.com", "", ""),
+        ]
+
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "UPDATE auth.users SET first_name = :first, last_name = :last "
+                    "WHERE email = 'con@example.com'"
+                ),
+                {"first": "x" * 100, "last": "Aguilar García"},
+            )
+        command.downgrade(alembic_config, "0004_user_name")
+        with engine.connect() as connection:
+            downgraded = connection.execute(
+                text("SELECT email, name FROM auth.users ORDER BY email")
+            ).all()
+        # «nombre apellido» recortado a 100 caracteres; sin nombre ni apellido queda NULL.
+        assert [tuple(row) for row in downgraded] == [
+            ("con@example.com", "x" * 100),
+            ("sin@example.com", None),
+        ]
+    finally:
+        with engine.begin() as connection:
+            connection.execute(text("DELETE FROM auth.users"))
+        command.upgrade(alembic_config, "head")
