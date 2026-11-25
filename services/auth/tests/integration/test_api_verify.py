@@ -11,21 +11,12 @@ import jwt
 import pytest
 
 from ..conftest import JWT_SECRET
-
-PASSWORD = "una contraseña larga"
-EMAIL = "luis@example.com"
-
-
-def register(client, email=EMAIL):
-    body = {"email": email, "password": PASSWORD, "first_name": "Luis", "last_name": "Aguilar"}
-    response = client.post("/register", json=body)
-    assert response.status_code == 201
-    return response.json()
+from . import accounts
+from .accounts import EMAIL, PASSWORD, register
 
 
 def log_in(client, device_id="telefono", email=EMAIL):
-    body = {"email": email, "password": PASSWORD, "device_id": device_id, "device_name": device_id}
-    response = client.post("/sessions", json=body)
+    response = accounts.log_in(client, device_id, email)
     assert response.status_code == 201
     return response.json()
 

@@ -22,13 +22,11 @@ from auth_service.infrastructure.db import SystemClock, build_session_factory
 from auth_service.infrastructure.repositories import SqlUnitOfWork
 from auth_service.infrastructure.security import Argon2PasswordHasher, JwtTokenService
 from auth_service.interfaces.http.auth import router as auth_router
-from service_common.health import router as health_router
-from service_common.security_headers import add_security_headers
+from service_common.app import create_service_app
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings()
-    is_development = settings.app_env == "development"
     session_factory = build_session_factory(settings.database_url)
 
     @asynccontextmanager
@@ -37,15 +35,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # Al apagar la app se cierran las conexiones abiertas con PostgreSQL.
         session_factory.kw["bind"].dispose()
 
-    app = FastAPI(
-        lifespan=lifespan,
+    app = create_service_app(
         title="Finance Balance API",
-        version="0.1.0",
-        docs_url="/docs" if is_development else None,
-        redoc_url=None,
-        openapi_url="/openapi.json" if is_development else None,
+        production=settings.app_env == "production",
+        lifespan=lifespan,
     )
-    add_security_headers(app, production=not is_development)
 
     # Composición: aquí se eligen las implementaciones concretas de cada puerto. El motor de
     # base de datos no se conecta hasta la primera consulta.
@@ -75,6 +69,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.revoke_session = RevokeSession(uow_factory, clock)
     app.state.delete_account = DeleteAccount(uow_factory, hasher, clock)
 
-    app.include_router(health_router)
     app.include_router(auth_router)
     return app

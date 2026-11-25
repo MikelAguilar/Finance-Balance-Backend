@@ -33,6 +33,10 @@ jobs:
       - run: uv run pytest
         env:
           HYPOTHESIS_PROFILE: ci
+      # Código repetido (6 líneas o más) en el código fuente y las herramientas. Las pruebas quedan
+      # fuera: repiten a propósito los valores esperados (son su oráculo).
+      - name: Duplicación (pylint)
+        run: uv run pylint --disable=all --enable=duplicate-code --min-similarity-lines=6 libs/*/src services/*/src tools/crap.py
 
   seguridad:
     runs-on: ubuntu-latest
@@ -88,9 +92,12 @@ jobs:
           enable-cache: true
       - run: uv sync --locked --all-packages
       # Todas las pruebas (unitarias, de integración y de contrato) con cobertura mínima del 90 %.
-      - run: uv run pytest --cov --cov-fail-under=90
+      - run: uv run pytest --cov --cov-fail-under=90 --cov-report=term --cov-report=json
         env:
           HYPOTHESIS_PROFILE: ci
+      # CRAP por función (complejidad cruzada con cobertura): ninguna llega a 10.
+      - name: CRAP
+        run: uv run python tools/crap.py coverage.json --limit 10
 
   docker:
     needs: [calidad, seguridad, integracion]
