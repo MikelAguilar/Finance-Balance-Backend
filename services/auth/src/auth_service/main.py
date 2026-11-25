@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from auth_service.application.use_cases import (
     Authenticate,
     ChangePassword,
+    DeleteAccount,
     GetProfile,
     ListSessions,
     LogIn,
@@ -72,6 +73,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.update_profile = UpdateProfile(uow_factory)
     app.state.list_sessions = ListSessions(uow_factory, clock)
     app.state.revoke_session = RevokeSession(uow_factory, clock)
+    app.state.delete_account = DeleteAccount(uow_factory, hasher, clock)
 
     app.include_router(health_router)
     app.include_router(auth_router)

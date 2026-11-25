@@ -25,7 +25,16 @@ class Base(DeclarativeBase):
 
 class UserRow(Base):
     __tablename__ = "users"
-    __table_args__ = (UniqueConstraint("email", name="uq_users_email"),)
+    __table_args__ = (
+        # El correo es único solo entre las cuentas no eliminadas: quien elimina su cuenta puede
+        # registrarse otra vez con el mismo correo; la cuenta anterior se conserva.
+        Index(
+            "uq_users_email",
+            "email",
+            unique=True,
+            postgresql_where=text("deleted_at IS NULL"),
+        ),
+    )
 
     id: Mapped[UUID] = mapped_column(primary_key=True)
     email: Mapped[str] = mapped_column(String(254))
@@ -33,6 +42,7 @@ class UserRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     first_name: Mapped[str] = mapped_column(String(100))
     last_name: Mapped[str] = mapped_column(String(100))
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class SessionRow(Base):

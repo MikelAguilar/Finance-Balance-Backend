@@ -192,3 +192,64 @@ def test_migration_0005_keeps_existing_names_both_ways(alembic_config, engine) -
         with engine.begin() as connection:
             connection.execute(text("DELETE FROM auth.users"))
         command.upgrade(alembic_config, "head")
+
+
+# ------------------------------------------------------------------ eliminar la cuenta
+
+
+def test_deleted_account_is_hidden_but_kept(uow_factory, engine) -> None:
+    user = new_user()
+    with uow_factory() as uow:
+        uow.users.add(user)
+        uow.commit()
+    with uow_factory() as uow:
+        uow.users.get(user.id).deleted_at = NOW
+        uow.commit()
+
+    with uow_factory() as uow:
+        assert uow.users.get(user.id) is None
+        assert uow.users.get(user.id, for_update=True) is None
+        assert uow.users.get_by_email(user.email) is None
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT count(*) FROM auth.users")).scalar_one() == 1
+
+
+def test_email_is_unique_only_among_accounts_not_deleted(uow_factory) -> None:
+    for _ in range(2):
+        user = new_user()
+        with uow_factory() as uow:
+            uow.users.add(user)
+            uow.commit()
+        with uow_factory() as uow:
+            uow.users.get(user.id).deleted_at = NOW
+            uow.commit()
+
+    with uow_factory() as uow:
+        uow.users.add(new_user())
+        uow.commit()
+    with pytest.raises(EmailAlreadyRegistered), uow_factory() as uow:
+        uow.users.add(new_user())
+        uow.commit()
+
+
+def test_migration_0006_downgrade_refuses_to_reactivate_deleted_accounts(
+    alembic_config, engine
+) -> None:
+    """Nada se borra: si hay cuentas eliminadas, bajar la migración se detiene sin tocarlas."""
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO auth.users "
+                "(id, email, password_hash, created_at, first_name, last_name, deleted_at) "
+                "VALUES (gen_random_uuid(), 'luis@x.com', 'h', now(), 'A', 'B', now())"
+            )
+        )
+
+    with pytest.raises(RuntimeError, match="cuentas eliminadas"):
+        command.downgrade(alembic_config, "0005_first_and_last_name")
+
+    with engine.connect() as connection:
+        deleted = connection.execute(
+            text("SELECT count(*) FROM auth.users WHERE deleted_at IS NOT NULL")
+        ).scalar_one()
+    assert deleted == 1

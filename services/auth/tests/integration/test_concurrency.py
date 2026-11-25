@@ -14,6 +14,7 @@ from functools import partial
 import pytest
 
 from auth_service.application.use_cases import (
+    DeleteAccount,
     ListSessions,
     LogIn,
     RefreshSession,
@@ -21,7 +22,12 @@ from auth_service.application.use_cases import (
     RevokeSession,
     UpdateProfile,
 )
-from auth_service.domain.errors import EmailAlreadyRegistered, InvalidToken
+from auth_service.domain.errors import (
+    EmailAlreadyRegistered,
+    InvalidCredentials,
+    InvalidToken,
+    WrongCurrentPassword,
+)
 from auth_service.infrastructure.db import SystemClock, build_session_factory
 from auth_service.infrastructure.repositories import SqlUnitOfWork
 from auth_service.infrastructure.security import Argon2PasswordHasher, JwtTokenService
@@ -44,6 +50,7 @@ def services(settings):
         "revoke": RevokeSession(uow, clock),
         "update_profile": UpdateProfile(uow),
         "list_sessions": ListSessions(uow, clock),
+        "delete_account": DeleteAccount(uow, hasher, clock),
         "uow": uow,
     }
     session_factory.kw["bind"].dispose()
@@ -219,3 +226,34 @@ def test_changing_first_and_last_name_at_once_loses_neither(services):
         stored = uow.users.get(user.id)
     assert stored.first_name.startswith("Nombre ")
     assert stored.last_name.startswith("Apellido ")
+
+
+def test_deleting_the_account_many_times_at_once_succeeds_only_once(services):
+    user = services["register"].execute("luis@example.com", PASSWORD, "Luis", "Aguilar")
+
+    results = run_at_once(lambda: services["delete_account"].execute(user.id, PASSWORD))
+
+    # El primero la elimina; los demás esperan el bloqueo y ya no encuentran la cuenta.
+    assert kinds(results) == Counter({"ok": 1, WrongCurrentPassword.__name__: THREADS - 1})
+
+
+def test_logins_racing_an_account_deletion_never_leave_an_active_session(services):
+    user = services["register"].execute("luis@example.com", PASSWORD, "Luis", "Aguilar")
+    counter = iter(range(THREADS))
+    lock = threading.Lock()
+
+    def delete_or_log_in():
+        with lock:
+            turn = next(counter)
+        if turn == 0:
+            return services["delete_account"].execute(user.id, PASSWORD)
+        device = f"dispositivo-{turn}"
+        return services["log_in"].execute("luis@example.com", PASSWORD, device, device)
+
+    results = run_at_once(delete_or_log_in)
+
+    # Cada inicio de sesión ocurre antes (y su sesión se revoca) o después (y se rechaza).
+    assert set(kinds(results)) <= {"ok", InvalidCredentials.__name__}
+    with services["uow"]() as uow:
+        assert uow.users.get(user.id) is None
+        assert uow.sessions.list_unrevoked_for_user(user.id) == []

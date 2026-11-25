@@ -65,7 +65,7 @@ def test_register_with_short_password_fails_and_saves_nothing(register, uow) -> 
     with pytest.raises(WeakPassword):
         register.execute("luis@example.com", "corta", "Luis", "Aguilar")
 
-    assert uow.users.by_email == {}
+    assert uow.users.items == []
     assert uow.commits == 0
 
 

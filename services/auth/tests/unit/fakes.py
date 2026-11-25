@@ -62,17 +62,19 @@ class FakeTokens:
 
 
 class FakeUsers:
+    """Como la base: las cuentas eliminadas siguen guardadas, pero `get` no las devuelve."""
+
     def __init__(self) -> None:
-        self.by_email: dict[str, User] = {}
+        self.items: list[User] = []
 
     def get(self, user_id: UUID, *, for_update: bool = False) -> User | None:
-        return next((u for u in self.by_email.values() if u.id == user_id), None)
+        return next((u for u in self.items if u.id == user_id and u.deleted_at is None), None)
 
     def get_by_email(self, email: str, *, for_update: bool = False) -> User | None:
-        return self.by_email.get(email)
+        return next((u for u in self.items if u.email == email and u.deleted_at is None), None)
 
     def add(self, user: User) -> None:
-        self.by_email[user.email] = user
+        self.items.append(user)
 
 
 class FakeSessions:
