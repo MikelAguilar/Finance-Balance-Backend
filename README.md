@@ -11,7 +11,7 @@ Backend de Finance Balance, una aplicación personal de finanzas para Android. E
 
 ## Estado
 
-En desarrollo. Hoy están disponibles el registro de cuentas, el inicio y cierre de sesión por dispositivo, la renovación de sesión, el cambio de contraseña, el perfil, la lista de dispositivos y la eliminación de la cuenta. El servicio de finanzas ya existe y solo acepta peticiones con una sesión activa; tarjetas, movimientos y sincronización llegan en las siguientes fases.
+En desarrollo. Hoy están disponibles el registro de cuentas, el inicio y cierre de sesión por dispositivo, la renovación de sesión, el cambio de contraseña, el perfil, la lista de dispositivos y la eliminación de la cuenta. El servicio de finanzas ya existe y solo acepta peticiones con una sesión activa. Ya tiene las tablas y reglas de tarjetas, movimientos (cargos, compras a meses y pagos) e ingreso mensual; la sincronización con la app llega en la siguiente fase.
 
 ## Arquitectura
 
@@ -35,6 +35,10 @@ backend/
 │   │   ├── Dockerfile
 │   │   └── pyproject.toml   # dependencias del servicio
 │   └── finance/             # servicio de finanzas (paquete finance_service)
+│       ├── src/finance_service/
+│       ├── migrations/      # migraciones de Alembic (esquema finance)
+│       ├── contract/        # casos de validación compartidos con la app
+│       └── tests/
 ├── tools/crap.py            # CRAP por función (complejidad y cobertura)
 ├── docker-compose.yml       # db, auth, finance y gateway
 ├── pyproject.toml           # workspace de uv y herramientas de desarrollo
@@ -109,6 +113,16 @@ Los endpoints de `/auth/me`, `/auth/sessions` (GET y DELETE) y `/auth/password` 
 Eliminar la cuenta es solo un borrado lógico: nada se borra de la base. La fila queda marcada con `deleted_at`, deja de poder iniciar sesión (responde igual que una contraseña incorrecta) y todas sus sesiones se revocan al instante. El correo solo es único entre las cuentas no eliminadas, así que se puede volver a registrar enseguida.
 
 El detalle completo de cada endpoint está en Swagger y en el contrato `services/auth/openapi.json`.
+
+### Datos de finanzas y casos compartidos
+
+Finanzas guarda sus tablas en el esquema `finance` de la misma base (`cards`, `movements` y `monthly_income`), con su propia tabla de versiones de Alembic. Reglas principales:
+
+- El dinero va en centavos enteros (`BIGINT`), nunca en float. La tasa mensual de una compra a meses viaja como texto (`"0.03"`) y se guarda en `NUMERIC(7,6)`.
+- La fecha de un movimiento viaja en ISO 8601 con offset (`2026-11-26T03:00:00+01:00`) y se guarda como instante más offset. Sin offset o a más de 24 horas en el futuro se rechaza.
+- Cada registro lleva `version`, `idempotency_key` y `deleted_at` para la sincronización; nada se borra.
+
+`services/finance/contract/validation-cases.json` tiene los casos que el servidor acepta y rechaza (con el campo y la regla de cada rechazo). La app los copia para sus pruebas; las de Python los recorren completos.
 
 ## Pruebas
 
