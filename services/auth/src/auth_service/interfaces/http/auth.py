@@ -188,9 +188,9 @@ class ErrorResponse(BaseModel):
 
 
 def unauthorized(detail: str) -> HTTPException:
-    return HTTPException(
-        status.HTTP_401_UNAUTHORIZED, detail, headers={"WWW-Authenticate": "Bearer"}
-    )
+    # Los nombres de cabecera HTTP no distinguen mayúsculas: cambiarlas no cambia nada.
+    headers = {"WWW-Authenticate": "Bearer"}  # pragma: no mutate
+    return HTTPException(status.HTTP_401_UNAUTHORIZED, detail, headers=headers)
 
 
 def current_session(

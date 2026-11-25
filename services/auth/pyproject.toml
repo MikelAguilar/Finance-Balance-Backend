@@ -33,5 +33,8 @@ finance-balance-common = { workspace = true }
 [tool.mutmut]
 source_paths = ["src/"]
 also_copy = ["alembic.ini", "migrations/", "openapi.json"]
+# ports.py solo declara interfaces (Protocol): su código nunca se ejecuta, así que cualquier
+# mutante ahí es equivalente.
+do_not_mutate = ["src/auth_service/application/ports.py"]
 pytest_add_cli_args = ["-p", "no:randomly"]
 pytest_add_cli_args_test_selection = ["tests/"]
