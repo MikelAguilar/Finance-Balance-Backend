@@ -1,7 +1,8 @@
-# Raíz del workspace: no es un paquete. Cada servicio vive en services/<nombre>/ con su
-# propio pyproject.toml, y todos comparten este uv.lock y las herramientas de desarrollo.
+# Raíz del workspace: no es un paquete. Cada servicio vive en services/<nombre>/ y el código que
+# comparten vive en libs/<nombre>/. Cada uno tiene su propio pyproject.toml, y todos comparten este
+# uv.lock y las herramientas de desarrollo.
 [tool.uv.workspace]
-members = ["services/*"]
+members = ["libs/*", "services/*"]
 
 [dependency-groups]
 dev = [
@@ -28,7 +29,7 @@ filterwarnings = [
 ]
 
 [tool.coverage.run]
-source = ["auth_service"]
+source = ["auth_service", "finance_service", "service_common"]
 branch = true
 
 [tool.coverage.report]
@@ -46,4 +47,4 @@ select = ["E", "F", "I", "B", "UP"]
 exclude_dirs = ["tests", ".venv"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["auth_service"]
+known-first-party = ["auth_service", "finance_service", "service_common"]

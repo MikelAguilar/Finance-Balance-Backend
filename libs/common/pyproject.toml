@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=84.2.1"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "finance-balance-common"
+version = "0.1.0"
+description = "Piezas HTTP comunes a los servicios de Finance Balance: salud y cabeceras de seguridad"
+license = "MIT"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115,<1",
+    "pydantic>=2.9,<3",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]

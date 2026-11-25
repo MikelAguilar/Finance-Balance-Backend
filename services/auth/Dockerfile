@@ -18,9 +18,11 @@ WORKDIR /app
 
 # Primero solo las dependencias: esta capa se reutiliza mientras uv.lock no cambie.
 COPY pyproject.toml uv.lock ./
+COPY libs/common/pyproject.toml libs/common/
 COPY services/auth/pyproject.toml services/auth/
 RUN uv sync --locked --no-dev --package finance-balance-auth --no-install-workspace
 
+COPY libs/common/src libs/common/src
 COPY services/auth/src services/auth/src
 RUN uv sync --locked --no-dev --package finance-balance-auth --no-editable
 

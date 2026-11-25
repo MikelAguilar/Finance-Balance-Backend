@@ -22,8 +22,8 @@ from auth_service.infrastructure.db import SystemClock, build_session_factory
 from auth_service.infrastructure.repositories import SqlUnitOfWork
 from auth_service.infrastructure.security import Argon2PasswordHasher, JwtTokenService
 from auth_service.interfaces.http.auth import router as auth_router
-from auth_service.interfaces.http.health import router as health_router
-from auth_service.interfaces.http.security_headers import add_security_headers
+from service_common.health import router as health_router
+from service_common.security_headers import add_security_headers
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
