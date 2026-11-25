@@ -31,6 +31,9 @@ class User:
     # Obligatorios desde el registro. last_name guarda todos los apellidos («Aguilar García»).
     first_name: str
     last_name: str
+    # Borrado lógico: la cuenta eliminada se conserva en la base, pero no inicia sesión ni
+    # aparece al buscar por correo o por id.
+    deleted_at: datetime | None = None
 
 
 @dataclass

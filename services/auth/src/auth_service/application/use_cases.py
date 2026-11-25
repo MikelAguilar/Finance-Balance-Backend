@@ -295,3 +295,27 @@ class RevokeSession:
             if session.revoked_at is None:
                 session.revoke(self._clock.now())
                 uow.commit()
+
+
+class DeleteAccount:
+    """Elimina la cuenta tras confirmar la contraseña: borrado lógico (nada se borra de la
+    base) y todas las sesiones revocadas."""
+
+    def __init__(
+        self, uow_factory: Callable[[], UnitOfWork], hasher: PasswordHasher, clock: Clock
+    ) -> None:
+        self._uow_factory = uow_factory
+        self._hasher = hasher
+        self._clock = clock
+
+    def execute(self, user_id: UUID, password: str) -> None:
+        now = self._clock.now()
+        with self._uow_factory() as uow:
+            # Bloquea la cuenta: un inicio de sesión simultáneo espera y después ya no la ve.
+            user = uow.users.get(user_id, for_update=True)
+            if user is None or not self._hasher.verify(user.password_hash, password):
+                raise WrongCurrentPassword()
+            user.deleted_at = now
+            for session in uow.sessions.list_unrevoked_for_user(user_id):
+                session.revoke(now)
+            uow.commit()

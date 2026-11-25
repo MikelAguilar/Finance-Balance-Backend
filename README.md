@@ -7,11 +7,11 @@ Backend de Finance Balance, una aplicación personal de finanzas para Android. E
 - Registro con nombre, apellidos, correo y contraseña; inicio de sesión con correo y contraseña.
 - Sesiones por dispositivo: puedes tener la cuenta abierta en varios teléfonos y cerrar la sesión de cualquiera de ellos a distancia.
 - Sincronización de la información que la app guarda sin conexión.
-- Borrado lógico: lo que se borra se oculta de inmediato y el servidor lo conserva 30 días antes de eliminarlo de forma definitiva.
+- Borrado lógico: lo que se borra se oculta de inmediato, pero nada se elimina de la base. El servidor conserva todo, cuentas incluidas.
 
 ## Estado
 
-En desarrollo. Hoy están disponibles el registro de cuentas, el inicio y cierre de sesión por dispositivo, la renovación de sesión y el cambio de contraseña. El resto se agrega por fases.
+En desarrollo. Hoy están disponibles el registro de cuentas, el inicio y cierre de sesión por dispositivo, la renovación de sesión, el cambio de contraseña, el perfil, la lista de dispositivos y la eliminación de la cuenta. El resto se agrega por fases.
 
 ## Arquitectura
 
@@ -93,10 +93,15 @@ Swagger solo está disponible en desarrollo. En producción se desactiva.
 | PUT    | `/auth/password` | Cambia la contraseña (pide la actual) y cierra los demás dispositivos. `204`; `403` si la actual no es correcta. |
 | GET    | `/auth/me` | Perfil de la cuenta: id, correo, nombre, apellidos y fecha de alta. |
 | PATCH  | `/auth/me` | Cambia el nombre, los apellidos o los dos; lo que no se envía queda igual. No se pueden borrar (`null` da `422`). Solo acepta `first_name` y `last_name`. |
+| DELETE | `/auth/me` | Elimina la cuenta. Pide la contraseña en el cuerpo (`{"password": "..."}`). Cierra la sesión de todos los dispositivos y el correo queda libre para registrarse otra vez. `204`; `403` si la contraseña no es correcta. |
 | GET    | `/auth/sessions` | Dispositivos con sesión activa, del uso más reciente al más antiguo; `current` marca este dispositivo. |
 | DELETE | `/auth/sessions/{id}` | Cierra la sesión de otro dispositivo (o de este). `204`, también si ya estaba cerrada; `404` si no existe o es de otra cuenta. |
 
 Los endpoints de `/auth/me`, `/auth/sessions` (GET y DELETE) y `/auth/password` requieren `Authorization: Bearer <token de acceso>`.
+
+### Eliminar la cuenta
+
+Eliminar la cuenta es solo un borrado lógico: nada se borra de la base. La fila queda marcada con `deleted_at`, deja de poder iniciar sesión (responde igual que una contraseña incorrecta) y todas sus sesiones se revocan al instante. El correo solo es único entre las cuentas no eliminadas, así que se puede volver a registrar enseguida.
 
 El detalle completo de cada endpoint está en Swagger y en el contrato `services/auth/openapi.json`.
 

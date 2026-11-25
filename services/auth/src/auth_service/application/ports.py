@@ -33,7 +33,9 @@ class TokenService(Protocol):
 
 class UserRepository(Protocol):
     """`for_update=True` bloquea la fila hasta el final de la transacción: dos operaciones
-    simultáneas sobre la misma cuenta se ejecutan una después de la otra."""
+    simultáneas sobre la misma cuenta se ejecutan una después de la otra.
+
+    `get` y `get_by_email` no devuelven cuentas eliminadas (con `deleted_at`)."""
 
     def get(self, user_id: UUID, *, for_update: bool = False) -> User | None: ...
 

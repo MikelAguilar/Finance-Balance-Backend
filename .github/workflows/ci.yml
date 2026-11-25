@@ -144,6 +144,30 @@ jobs:
           code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$api/register" -H "$json" \
             -d '{"email": "sin.apellido@example.com", "password": "contraseña de prueba de CI", "first_name": "Ana"}')
           test "$code" = "422"
+      - name: Eliminar la cuenta
+        run: |
+          api=http://localhost:8000/auth
+          json="Content-Type: application/json"
+          body='{"email": "borrar@example.com", "password": "contraseña de prueba de CI"'
+          curl --fail -X POST "$api/register" -H "$json" \
+            -d "$body, \"first_name\": \"Borrar\", \"last_name\": \"Cuenta\"}"
+          access=$(curl --fail -X POST "$api/sessions" -H "$json" \
+            -d "$body, \"device_id\": \"ci\", \"device_name\": \"CI\"}" | jq -r .access_token)
+          # Contraseña incorrecta → 403 y la cuenta sigue.
+          code=$(curl -s -o /dev/null -w "%{http_code}" -X DELETE "$api/me" -H "$json" \
+            -H "Authorization: Bearer $access" -d '{"password": "otra contraseña de CI"}')
+          test "$code" = "403"
+          curl --fail -X DELETE "$api/me" -H "$json" -H "Authorization: Bearer $access" \
+            -d '{"password": "contraseña de prueba de CI"}'
+          # La sesión quedó cerrada y la cuenta ya no inicia sesión.
+          code=$(curl -s -o /dev/null -w "%{http_code}" "$api/me" -H "Authorization: Bearer $access")
+          test "$code" = "401"
+          code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$api/sessions" -H "$json" \
+            -d "$body, \"device_id\": \"ci\", \"device_name\": \"CI\"}")
+          test "$code" = "401"
+          # El correo queda libre para una cuenta nueva.
+          curl --fail -X POST "$api/register" -H "$json" \
+            -d "$body, \"first_name\": \"Nueva\", \"last_name\": \"Cuenta\"}"
       # El gateway rechaza cuerpos de más de 1 MB.
       - name: Cuerpo demasiado grande → 413
         run: |

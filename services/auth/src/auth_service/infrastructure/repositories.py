@@ -18,7 +18,15 @@ from auth_service.domain.errors import EmailAlreadyRegistered
 from auth_service.domain.model import Session, User
 from auth_service.infrastructure.db import LoginAttemptRow, SessionRow, UserRow
 
-_USER_FIELDS = ("id", "email", "password_hash", "created_at", "first_name", "last_name")
+_USER_FIELDS = (
+    "id",
+    "email",
+    "password_hash",
+    "created_at",
+    "first_name",
+    "last_name",
+    "deleted_at",
+)
 _SESSION_FIELDS = (
     "id",
     "user_id",
@@ -62,16 +70,20 @@ class SqlUserRepository:
         self._tracker = _Tracker(_USER_FIELDS)
 
     def get(self, user_id: UUID, *, for_update: bool = False) -> User | None:
-        row = self._db.get(UserRow, user_id, with_for_update=for_update)
-        return None if row is None else self._tracker.to_entity(User, row)
+        return self._first(UserRow.id == user_id, for_update=for_update)
 
     def get_by_email(self, email: str, *, for_update: bool = False) -> User | None:
-        query = select(UserRow).where(UserRow.email == email)
-        row = self._db.scalar(query.with_for_update() if for_update else query)
-        return None if row is None else self._tracker.to_entity(User, row)
+        return self._first(UserRow.email == email, for_update=for_update)
 
     def add(self, user: User) -> None:
         self._db.add(self._tracker.to_row(UserRow, user))
+
+    def _first(self, condition, *, for_update: bool) -> User | None:
+        # Con FOR UPDATE, si otra transacción elimina la cuenta mientras esta espera el
+        # bloqueo, PostgreSQL vuelve a evaluar el filtro y la fila ya no se devuelve.
+        query = select(UserRow).where(condition, UserRow.deleted_at.is_(None))
+        row = self._db.scalar(query.with_for_update() if for_update else query)
+        return None if row is None else self._tracker.to_entity(User, row)
 
     def sync(self) -> None:
         self._tracker.sync()

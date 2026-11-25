@@ -21,6 +21,7 @@ from auth_service.application.use_cases import (
     AuthContext,
     Authenticate,
     ChangePassword,
+    DeleteAccount,
     GetProfile,
     ListSessions,
     LogIn,
@@ -121,6 +122,10 @@ class RefreshRequest(StrictRequest):
 class ChangePasswordRequest(StrictRequest):
     current_password: str = Field(max_length=MAX_PASSWORD_LENGTH)
     new_password: str = Field(max_length=MAX_PASSWORD_LENGTH)
+
+
+class DeleteAccountRequest(StrictRequest):
+    password: str = Field(max_length=MAX_PASSWORD_LENGTH)
 
 
 class TokenResponse(BaseModel):
@@ -241,6 +246,10 @@ def get_revoke_session(request: Request) -> RevokeSession:
     return request.app.state.revoke_session
 
 
+def get_delete_account(request: Request) -> DeleteAccount:
+    return request.app.state.delete_account
+
+
 UNAUTHORIZED = {401: {"model": ErrorResponse}}
 
 
@@ -357,6 +366,29 @@ def update_profile(
     except InvalidToken as error:
         raise unauthorized("La cuenta ya no existe.") from error
     return UserResponse.from_user(user)
+
+
+@router.delete(
+    "/me",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={
+        **UNAUTHORIZED,
+        # 403 y no 401, igual que en /password: un 401 haría que la app cerrara la sesión.
+        403: {"model": ErrorResponse},
+    },
+)
+def delete_account(
+    body: DeleteAccountRequest,
+    session: CurrentSession,
+    use_case: Annotated[DeleteAccount, Depends(get_delete_account)],
+) -> Response:
+    # Borrado lógico: la cuenta se conserva en la base, se cierran todas las sesiones y el correo
+    # queda libre para un registro nuevo.
+    try:
+        use_case.execute(session.user_id, body.password)
+    except WrongCurrentPassword as error:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "La contraseña no es correcta.") from error
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.put(
