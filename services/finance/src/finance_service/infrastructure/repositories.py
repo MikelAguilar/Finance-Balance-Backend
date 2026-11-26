@@ -25,6 +25,10 @@ from finance_service.domain.model import (
 )
 from finance_service.infrastructure.db import CardRow, MonthlyIncomeRow, MovementRow, SyncColumns
 
+# Candado de PostgreSQL por cuenta. En SQL las mayúsculas no importan: el mutante "select" es
+# equivalente.
+LOCK_ACCOUNT = "SELECT pg_advisory_xact_lock(hashtextextended(:user_id, 0))"  # pragma: no mutate
+
 
 def stored[T](row: SyncColumns, value: T) -> Stored[T]:
     return Stored(
@@ -75,13 +79,7 @@ class SqlSyncStore:
     def lock_account(self, user_id: UUID) -> None:
         # Candado de PostgreSQL por cuenta que se suelta solo al terminar la transacción. Dos
         # cuentas con el mismo hash solo se esperan entre sí: nunca se mezclan sus datos.
-        self._db.execute(
-            # En SQL las mayúsculas no importan: el mutante "select" es equivalente.
-            text(
-                "SELECT pg_advisory_xact_lock(hashtextextended(:user_id, 0))"
-            ),  # pragma: no mutate
-            {"user_id": str(user_id)},
-        )
+        self._db.execute(text(LOCK_ACCOUNT), {"user_id": str(user_id)})
 
     def _changed[R: SyncColumns](
         self, model: type[R], user_id: UUID, after: int
