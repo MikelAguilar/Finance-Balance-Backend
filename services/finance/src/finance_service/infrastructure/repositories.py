@@ -76,7 +76,10 @@ class SqlSyncStore:
         # Candado de PostgreSQL por cuenta que se suelta solo al terminar la transacción. Dos
         # cuentas con el mismo hash solo se esperan entre sí: nunca se mezclan sus datos.
         self._db.execute(
-            text("SELECT pg_advisory_xact_lock(hashtextextended(:user_id, 0))"),
+            # En SQL las mayúsculas no importan: el mutante "select" es equivalente.
+            text(
+                "SELECT pg_advisory_xact_lock(hashtextextended(:user_id, 0))"
+            ),  # pragma: no mutate
             {"user_id": str(user_id)},
         )
 

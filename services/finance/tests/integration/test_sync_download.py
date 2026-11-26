@@ -280,3 +280,28 @@ def test_another_account_does_not_wait(engine, download_in_pages_of, insert, mak
     finally:
         transaction.rollback()
         connection.close()
+
+
+# --- La base reinicia ----------------------------------------------------------------------------
+
+
+def test_after_the_database_drops_its_connections_the_next_sync_works(engine, database_url) -> None:
+    # Como si PostgreSQL se reiniciara: las conexiones que la app tiene guardadas ya no sirven. Solo
+    # se cortan las de esta app (por su nombre): la base la comparten otras pruebas.
+    name = "finanzas-reinicio"
+    separator = "&" if "?" in database_url else "?"
+    settings = Settings(database_url=f"{database_url}{separator}application_name={name}")
+    user = uuid4()
+    with TestClient(create_app(settings)) as client:
+        sync(client, user, 0)
+        with engine.begin() as connection:
+            killed = connection.execute(
+                text(
+                    "SELECT count(pg_terminate_backend(pid)) FROM pg_stat_activity "
+                    "WHERE application_name = :name"
+                ),
+                {"name": name},
+            ).scalar()
+        assert killed >= 1
+
+        assert sync(client, user, 0)["cursor"] == 0

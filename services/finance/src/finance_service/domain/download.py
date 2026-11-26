@@ -3,7 +3,6 @@
 from collections.abc import Mapping
 from dataclasses import dataclass
 from heapq import merge
-from itertools import islice
 from uuid import UUID
 
 from finance_service.domain.errors import InvalidField
@@ -62,8 +61,7 @@ def cut_page(
     Cada lista llega ordenada y con hasta `limit + 1` registros: si en total sobra alguno,
     quedan más páginas.
     """
-    by_seq = merge(cards, movements, incomes, key=lambda record: record.seq)
-    taken = list(islice(by_seq, limit + 1))
+    taken = list(merge(cards, movements, incomes, key=lambda record: record.seq))
     # La página son justo los cambios hasta su último número: los demás quedan para la siguiente.
     cursor = taken[:limit][-1].seq if taken else after
     return Page(

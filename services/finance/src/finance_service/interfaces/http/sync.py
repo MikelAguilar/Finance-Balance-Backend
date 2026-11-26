@@ -25,12 +25,12 @@ from finance_service.domain.model import (
 router = APIRouter(tags=["finance"])
 
 
-def current_user(x_user_id: Annotated[str, Header()] = "") -> UUID:
+def current_user(x_user_id: Annotated[str | None, Header()] = None) -> UUID:
     """El usuario que verificó el gateway. Finanzas no publica puerto: solo el gateway llega aquí,
     y antes borra cualquier X-User-Id que venga de fuera. Sin él (o mal formado) es un 401."""
     try:
         return UUID(x_user_id)
-    except ValueError:
+    except (TypeError, ValueError):  # TypeError: no vino
         raise HTTPException(status.HTTP_401_UNAUTHORIZED) from None
 
 
