@@ -1,3 +1,9 @@
 # Falsos positivos revisados a mano. Formato: commit:archivo:regla:línea.
 # Token inventado a propósito en la prueba de humo de finanzas (ya no es un literal desde el commit siguiente).
 3f92a27b0ec7e129352836ec619061c25365c29c:.github/workflows/ci.yml:curl-auth-header:180
+# Claves de idempotencia inventadas (UUID) en los ejemplos de sincronización: el campo se llama "key" y
+# no son secretos. Desde el commit siguiente los ejemplos usan UUID legibles que gitleaks no marca.
+7d0731c74ba4e03cb0b38334b3ef1c561851274f:services/finance/contract/sync-examples.json:generic-api-key:24
+7d0731c74ba4e03cb0b38334b3ef1c561851274f:services/finance/contract/sync-examples.json:generic-api-key:39
+7d0731c74ba4e03cb0b38334b3ef1c561851274f:services/finance/contract/sync-examples.json:generic-api-key:54
+7d0731c74ba4e03cb0b38334b3ef1c561851274f:services/finance/contract/sync-examples.json:generic-api-key:70

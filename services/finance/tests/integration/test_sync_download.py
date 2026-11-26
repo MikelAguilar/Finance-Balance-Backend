@@ -73,8 +73,9 @@ def test_the_examples_shared_with_the_app_are_what_the_server_answers(
 ) -> None:
     examples = json.loads(EXAMPLES.read_text(encoding="utf-8"))["examples"]
     user = uuid4()
-    uid = "6f1d7c2e-2a4b-4c8e-9a51-0c3f7d9e1a0{}".format
-    key = "0b8e5d3a-7c41-4f2e-8d6b-1a9c3e5f7a0{}".format
+    # ids del servidor terminan en 1…4; claves de la app en a1…a4.
+    uid = "00000000-0000-4000-8000-00000000000{}".format
+    key = "00000000-0000-4000-8000-0000000000a{}".format
     card = make_card(id=UUID(uid(1)), idempotency_key=UUID(key(1)), user_id=user, version=2)
     insert("cards", card)
     insert(
