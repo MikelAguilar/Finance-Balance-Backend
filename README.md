@@ -11,7 +11,7 @@ Backend de Finance Balance, una aplicación personal de finanzas para Android. E
 
 ## Estado
 
-En desarrollo. Hoy están disponibles el registro de cuentas, el inicio y cierre de sesión por dispositivo, la renovación de sesión, el cambio de contraseña, el perfil, la lista de dispositivos y la eliminación de la cuenta. El servicio de finanzas ya existe y solo acepta peticiones con una sesión activa. Ya tiene las tablas y reglas de tarjetas, movimientos (cargos, compras a meses y pagos) e ingreso mensual; la sincronización con la app llega en la siguiente fase.
+En desarrollo. Hoy están disponibles el registro de cuentas, el inicio y cierre de sesión por dispositivo, la renovación de sesión, el cambio de contraseña, el perfil, la lista de dispositivos y la eliminación de la cuenta. El servicio de finanzas ya existe y solo acepta peticiones con una sesión activa. Ya tiene las tablas y reglas de tarjetas, movimientos (cargos, compras a meses y pagos) e ingreso mensual, y la app puede descargar sus datos por páginas; subir los cambios de la app llega en el siguiente PR.
 
 ## Arquitectura
 
@@ -37,7 +37,7 @@ backend/
 │   └── finance/             # servicio de finanzas (paquete finance_service)
 │       ├── src/finance_service/
 │       ├── migrations/      # migraciones de Alembic (esquema finance)
-│       ├── contract/        # casos de validación compartidos con la app
+│       ├── contract/        # casos de validación y ejemplos de sincronización para la app
 │       └── tests/
 ├── tools/crap.py            # CRAP por función (complejidad y cobertura)
 ├── docker-compose.yml       # db, auth, finance y gateway
@@ -95,6 +95,7 @@ Swagger solo está disponible en desarrollo. En producción se desactiva.
 | GET    | `/health`            | Indica si el gateway está activo. |
 | GET    | `/auth/health`       | Indica si el servicio de autenticación está activo. |
 | GET    | `/finance/health`    | Indica si el servicio de finanzas está activo. Requiere sesión activa (`401` sin ella). |
+| POST   | `/finance/sync`      | Descarga lo que cambió en la cuenta después de `cursor` (`{"cursor": 0}` la primera vez), en páginas de 500, con el `cursor` nuevo y `has_more`. Requiere sesión activa. `422` con campo y regla si el cuerpo no es válido. |
 | POST   | `/auth/register`     | Crea una cuenta con `first_name`, `last_name` (todos los apellidos en un campo; 1 a 100 caracteres cada uno, sin caracteres de control), correo y contraseña (12 a 128 caracteres). `201`; `409` si el correo ya existe; `422` si falta un dato o no es válido. |
 | POST   | `/auth/sessions`     | Inicia sesión en un dispositivo (`device_id`, `device_name`). Devuelve el token de acceso (15 min) y el refresh token (90 días). `401` si las credenciales no son válidas; `429` (con `Retry-After`) tras 5 fallos del mismo correo en 15 minutos. |
 | POST   | `/auth/sessions/refresh` | Entrega tokens nuevos a cambio del refresh token, que deja de servir. Reutilizar uno viejo cierra la sesión. `401` si no es válido. |
@@ -123,6 +124,17 @@ Finanzas guarda sus tablas en el esquema `finance` de la misma base (`cards`, `m
 - Cada registro lleva `version`, `idempotency_key` y `deleted_at` para la sincronización; nada se borra.
 
 `services/finance/contract/validation-cases.json` tiene los casos que el servidor acepta y rechaza (con el campo y la regla de cada rechazo). La app los copia para sus pruebas; las de Python los recorren completos.
+
+### Sincronización: descarga por páginas
+
+Cada escritura en finanzas toma el siguiente número de una secuencia (`change_seq`). La app manda el último número que recibió (`cursor`) y el servidor contesta con lo que cambió después:
+
+- Cada página trae hasta 500 registros en orden, el `cursor` nuevo y `has_more`.
+- Si un movimiento de la página apunta a una tarjeta que todavía no se envió, la tarjeta viaja en esa misma página.
+- Cada sincronización toma un candado por cuenta: dos teléfonos de la misma cuenta van uno detrás del otro y nunca llega una página a medias.
+- Cada registro trae `id`, `key` (la clave que generó la app), `version` y `data` con la misma forma que la app sube.
+
+`services/finance/contract/sync-examples.json` tiene peticiones y respuestas reales; las pruebas de Python las comparan con lo que contesta el servidor.
 
 ## Pruebas
 
