@@ -1,0 +1,88 @@
+{
+  "version": 1,
+  "description": "Ejemplos reales de POST /finance/sync. Las pruebas de Python siembran la base, llaman al endpoint y comparan la respuesta con este archivo. La app puede usarlo en su servidor falso. El gateway pone X-User-Id; la app solo manda su token.",
+  "rules": [
+    "La app manda el último cursor que recibió (0 la primera vez) y lo reemplaza por el de la respuesta solo después de guardar la página.",
+    "Si has_more es true, pide la siguiente página con el cursor nuevo.",
+    "Guarda primero las tarjetas de la página y después los movimientos: cada movimiento encuentra su tarjeta en la misma página o en una anterior.",
+    "Una tarjeta puede llegar dos veces (con su movimiento y después en su turno); guardarla otra vez con la misma versión no cambia nada.",
+    "key es la clave que la app generó al crear el registro: así reconoce lo que creó sin red. id es el del servidor.",
+    "Cada data tiene la misma forma que la app manda al crear o editar.",
+    "occurred_at llega con el offset del lugar donde se hizo la compra; monthly_rate llega como texto."
+  ],
+  "examples": [
+    {
+      "name": "primera descarga de una cuenta",
+      "request": {"cursor": 0},
+      "response": {
+        "cursor": 4,
+        "has_more": false,
+        "changes": {
+          "cards": [
+            {
+              "id": "6f1d7c2e-2a4b-4c8e-9a51-0c3f7d9e1a01",
+              "key": "0b8e5d3a-7c41-4f2e-8d6b-1a9c3e5f7a01",
+              "version": 2,
+              "data": {
+                "name": "Oro",
+                "cut_day": 5,
+                "personal_limit_cents": 1000000,
+                "bank_limit_cents": 2500000,
+                "used_at_creation_cents": 0,
+                "installments_count_against_limit": true
+              }
+            }
+          ],
+          "movements": [
+            {
+              "id": "6f1d7c2e-2a4b-4c8e-9a51-0c3f7d9e1a02",
+              "key": "0b8e5d3a-7c41-4f2e-8d6b-1a9c3e5f7a02",
+              "version": 1,
+              "data": {
+                "amount_cents": 1200000,
+                "occurred_at": "2026-11-20T19:30:00-06:00",
+                "review_status": "confirmed",
+                "owner_cut": "2026-12-05",
+                "kind": "installment",
+                "months": 12,
+                "monthly_rate": "0.015000"
+              },
+              "card": {"id": "6f1d7c2e-2a4b-4c8e-9a51-0c3f7d9e1a01"}
+            },
+            {
+              "id": "6f1d7c2e-2a4b-4c8e-9a51-0c3f7d9e1a03",
+              "key": "0b8e5d3a-7c41-4f2e-8d6b-1a9c3e5f7a03",
+              "version": 1,
+              "data": {
+                "amount_cents": 300000,
+                "occurred_at": "2026-11-26T03:00:00+01:00",
+                "review_status": "pending_review",
+                "owner_cut": "2026-12-05",
+                "kind": "payment",
+                "payment_source": "debit"
+              },
+              "card": {"id": "6f1d7c2e-2a4b-4c8e-9a51-0c3f7d9e1a01"}
+            }
+          ],
+          "monthly_income": [
+            {
+              "id": "6f1d7c2e-2a4b-4c8e-9a51-0c3f7d9e1a04",
+              "key": "0b8e5d3a-7c41-4f2e-8d6b-1a9c3e5f7a04",
+              "version": 1,
+              "data": {"amount_cents": 2500000}
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "sin cambios desde la última descarga",
+      "request": {"cursor": 4},
+      "response": {
+        "cursor": 4,
+        "has_more": false,
+        "changes": {"cards": [], "movements": [], "monthly_income": []}
+      }
+    }
+  ]
+}
