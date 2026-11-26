@@ -48,16 +48,27 @@ class SyncColumns:
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     server_updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # El cursor de la descarga: cada escritura toma el siguiente número de una secuencia que
+    # comparten las tres tablas (la pone PostgreSQL al insertar).
+    change_seq: Mapped[int] = mapped_column(
+        BigInteger, server_default=text("nextval('finance.change_seq')")
+    )
 
 
 def unique_idempotency_key(table: str) -> UniqueConstraint:
     return UniqueConstraint("user_id", "idempotency_key", name=f"uq_{table}_user_idempotency_key")
 
 
+def change_seq_index(table: str) -> Index:
+    # La descarga busca "lo de esta cuenta después del cursor".
+    return Index(f"ix_{table}_user_change_seq", "user_id", "change_seq")
+
+
 class CardRow(SyncColumns, Base):
     __tablename__ = "cards"
     __table_args__ = (
         unique_idempotency_key("cards"),
+        change_seq_index("cards"),
         # Destino de la llave foránea de movements: un movimiento solo apunta a una tarjeta de
         # su misma cuenta.
         UniqueConstraint("id", "user_id", name="uq_cards_id_user"),
@@ -75,6 +86,7 @@ class MovementRow(SyncColumns, Base):
     __tablename__ = "movements"
     __table_args__ = (
         unique_idempotency_key("movements"),
+        change_seq_index("movements"),
         ForeignKeyConstraint(
             ["card_id", "user_id"],
             [f"{SCHEMA}.cards.id", f"{SCHEMA}.cards.user_id"],
@@ -99,6 +111,7 @@ class MonthlyIncomeRow(SyncColumns, Base):
     __tablename__ = "monthly_income"
     __table_args__ = (
         unique_idempotency_key("monthly_income"),
+        change_seq_index("monthly_income"),
         # Un ingreso vigente por cuenta; los anteriores se conservan con deleted_at. Alembic no
         # compara la condición de un índice parcial: la que vale es la de la migración, probada
         # en test_monthly_income_table.
