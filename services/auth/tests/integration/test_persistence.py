@@ -288,3 +288,31 @@ def test_migration_0006_downgrade_refuses_to_reactivate_deleted_accounts(
             text("SELECT count(*) FROM auth.users WHERE deleted_at IS NOT NULL")
         ).scalar_one()
     assert deleted == 1
+
+
+def versions(engine, schema: str) -> list[str]:
+    with engine.connect() as connection:
+        query = text(f"SELECT version_num FROM {schema}.alembic_version")
+        return connection.execute(query).scalars().all()
+
+
+def test_the_version_table_stays_in_public_whatever_the_search_path(
+    alembic_config, engine, database_url, monkeypatch
+) -> None:
+    # PostgreSQL busca primero en el esquema con el nombre del usuario ("$user", public). En
+    # Compose el usuario se llama finance: sin fijar el esquema, la tabla de versiones de auth
+    # caía en el esquema de finanzas y los dos servicios chocaban al arrancar.
+    with engine.begin() as connection:
+        connection.execute(text("CREATE SCHEMA otro_servicio"))
+        connection.execute(text("CREATE TABLE otro_servicio.alembic_version (version_num text)"))
+        connection.execute(text("INSERT INTO otro_servicio.alembic_version VALUES ('ajena')"))
+    separator = "&" if "?" in database_url else "?"
+    search_path = f"{database_url}{separator}options=-csearch_path%3Dotro_servicio,public"
+    monkeypatch.setenv("DATABASE_URL", search_path)
+    try:
+        command.upgrade(alembic_config, "head")
+        assert versions(engine, "otro_servicio") == ["ajena"]
+        assert versions(engine, "public")
+    finally:
+        with engine.begin() as connection:
+            connection.execute(text("DROP SCHEMA otro_servicio CASCADE"))

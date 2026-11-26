@@ -671,17 +671,23 @@ name = "finance-balance-finance"
 version = "0.1.0"
 source = { editable = "services/finance" }
 dependencies = [
+    { name = "alembic" },
     { name = "fastapi" },
     { name = "finance-balance-common" },
+    { name = "psycopg", extra = ["binary"] },
     { name = "pydantic-settings" },
+    { name = "sqlalchemy" },
     { name = "uvicorn" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "alembic", specifier = ">=1.13,<2" },
     { name = "fastapi", specifier = ">=0.115,<1" },
     { name = "finance-balance-common", editable = "libs/common" },
+    { name = "psycopg", extras = ["binary"], specifier = ">=3.3.9,<4" },
     { name = "pydantic-settings", specifier = ">=2.6,<3" },
+    { name = "sqlalchemy", specifier = ">=2.0,<3" },
     { name = "uvicorn", specifier = ">=0.32,<1" },
 ]
 

@@ -29,9 +29,12 @@ COPY libs/common/src libs/common/src
 COPY services/finance/src services/finance/src
 RUN uv sync --locked --no-dev --package finance-balance-finance --no-editable
 
+COPY services/finance/alembic.ini services/finance/
+COPY services/finance/migrations services/finance/migrations
+
 USER appuser
 
 EXPOSE 8000
 
 # --root-path /finance: el gateway publica este servicio bajo /finance (Swagger arma sus URLs con eso).
-CMD ["uvicorn", "finance_service.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000", "--root-path", "/finance"]
+CMD ["sh", "-c", "alembic -c services/finance/alembic.ini upgrade head && uvicorn finance_service.main:create_app --factory --host 0.0.0.0 --port 8000 --root-path /finance"]
