@@ -603,3 +603,19 @@ def test_a_deleted_record_is_still_in_the_base_months_later(client, engine) -> N
     assert answer.status_code == 200
     assert answer.json()["changes"]["cards"][0]["deleted_at"] is not None
     assert count(engine, "cards", phone.user) == 1
+
+
+def test_deleting_a_movement_that_does_not_exist_names_its_position(phone, engine) -> None:
+    key = uuid4()
+    first = phone.send(
+        cards=[change(CARD, key=key)], movements=[change(MOVEMENT, card={"key": str(key)})]
+    )
+    movement = records(first, "movements")[0]
+    missing = {**deletion(movement), "id": str(uuid4())}
+
+    assert rejection(phone.post(movements=[deletion(movement), missing])) == {
+        "path": "changes.movements[1]",
+        "field": "id",
+        "rule": "not_found",
+    }
+    assert row(engine, "movements", movement["id"])["deleted_at"] is None
