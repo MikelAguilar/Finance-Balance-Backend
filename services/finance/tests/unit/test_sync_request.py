@@ -248,3 +248,51 @@ def test_the_same_key_in_two_tables_is_not_a_duplicate() -> None:
 def test_the_cursor_keeps_its_rules() -> None:
     assert rejected({"cursor": -1}) == {"path": "", "field": "cursor", "rule": "range"}
     assert parse_sync_request({"cursor": MAX_CENTS}, NOW).cursor == MAX_CENTS
+
+
+# --- Borrados ------------------------------------------------------------------------------------
+
+
+def deletion(id: int, change: int, **extra: object) -> dict:
+    return {
+        "id": U(id),
+        "base_version": 2,
+        "change_id": f"00000000-0000-4000-8000-0000000000d{change}",
+        "updated_at": "2026-11-26T05:00:00-06:00",
+        "deleted": True,
+        **extra,
+    }
+
+
+def test_a_deletion_is_an_edit_without_data() -> None:
+    sent = parse_sync_request(
+        upload(cards=[deletion(5, 1)], movements=[deletion(6, 2)], monthly_income=[deletion(7, 3)]),
+        NOW,
+    ).upload
+    assert sent.cards[0].target == Edit(id=UUID(U(5)), base_version=2)
+    assert [sent.cards[0].value, sent.movements[0].value, sent.incomes[0].value] == [None] * 3
+    # Un movimiento borrado no necesita su tarjeta.
+    assert sent.movements[0].card is None
+
+
+def test_deleted_false_is_an_ordinary_edit() -> None:
+    edit = {**new(2, CARD), "key": None, "id": U(5), "base_version": 1, "deleted": False}
+    assert parse_sync_request(upload(cards=[edit]), NOW).upload.cards[0].value == parse_card(CARD)
+
+
+@pytest.mark.parametrize(
+    ("change", "expected"),
+    [
+        ({**new(2, CARD), "deleted": True}, ("deleted", "not_allowed")),
+        (deletion(5, 2, data=CARD), ("data", "not_allowed")),
+        (deletion(5, 2, deleted="sí"), ("deleted", "type")),
+        ({**deletion(5, 2), "deleted": False}, ("data", "required")),
+    ],
+)
+def test_an_invalid_deletion_names_its_position(change: dict, expected: tuple) -> None:
+    assert change_error(change) == expected
+
+
+def test_a_deleted_movement_does_not_carry_its_card() -> None:
+    change = deletion(5, 2, card={"id": U(1)})
+    assert change_error(change, "movements") == ("card", "not_allowed")

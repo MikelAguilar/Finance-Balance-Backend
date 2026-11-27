@@ -28,7 +28,8 @@ class Existing[T]:
 class Write[T]:
     """Lo que se guarda al aplicar un cambio."""
 
-    value: T
+    # None: borrar el registro.
+    value: T | None
     # La hora de edición del teléfono, ya corregida con el reloj del servidor.
     updated_at: datetime
     change_id: UUID

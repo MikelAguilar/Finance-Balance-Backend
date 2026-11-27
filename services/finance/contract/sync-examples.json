@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "description": "Ejemplos reales de POST /finance/sync. Las pruebas de Python siembran la base, llaman al endpoint y comparan la respuesta con este archivo. La app puede usarlo en su servidor falso. El gateway pone X-User-Id; la app solo manda su token.",
   "rules": [
     "La app manda el último cursor que recibió (0 la primera vez) y lo reemplaza por el de la respuesta solo después de guardar la página.",
@@ -8,7 +8,8 @@
     "Una tarjeta puede llegar dos veces (con su movimiento y después en su turno); guardarla otra vez con la misma versión no cambia nada.",
     "key es la clave que la app generó al crear el registro: así reconoce lo que creó sin red. id es el del servidor.",
     "Cada data tiene la misma forma que la app manda al crear o editar.",
-    "occurred_at llega con el offset del lugar donde se hizo la compra; monthly_rate llega como texto."
+    "occurred_at llega con el offset del lugar donde se hizo la compra; monthly_rate llega como texto.",
+    "deleted_at es null si el registro está vivo; con fecha, se borró: la app lo oculta. Lo borrado baja como cualquier cambio."
   ],
   "examples": [
     {
@@ -30,6 +31,7 @@
               "id": "00000000-0000-4000-8000-000000000001",
               "key": "00000000-0000-4000-8000-0000000000a1",
               "version": 2,
+              "deleted_at": null,
               "data": {
                 "name": "Oro",
                 "cut_day": 5,
@@ -45,6 +47,10 @@
               "id": "00000000-0000-4000-8000-000000000002",
               "key": "00000000-0000-4000-8000-0000000000a2",
               "version": 1,
+              "card": {
+                "id": "00000000-0000-4000-8000-000000000001"
+              },
+              "deleted_at": null,
               "data": {
                 "amount_cents": 1200000,
                 "occurred_at": "2026-11-20T19:30:00-06:00",
@@ -53,15 +59,16 @@
                 "kind": "installment",
                 "months": 12,
                 "monthly_rate": "0.015000"
-              },
-              "card": {
-                "id": "00000000-0000-4000-8000-000000000001"
               }
             },
             {
               "id": "00000000-0000-4000-8000-000000000003",
               "key": "00000000-0000-4000-8000-0000000000a3",
               "version": 1,
+              "card": {
+                "id": "00000000-0000-4000-8000-000000000001"
+              },
+              "deleted_at": null,
               "data": {
                 "amount_cents": 300000,
                 "occurred_at": "2026-11-26T03:00:00+01:00",
@@ -69,9 +76,6 @@
                 "owner_cut": "2026-12-05",
                 "kind": "payment",
                 "payment_source": "debit"
-              },
-              "card": {
-                "id": "00000000-0000-4000-8000-000000000001"
               }
             }
           ],
@@ -80,6 +84,7 @@
               "id": "00000000-0000-4000-8000-000000000004",
               "key": "00000000-0000-4000-8000-0000000000a4",
               "version": 1,
+              "deleted_at": null,
               "data": {
                 "amount_cents": 2500000
               }
@@ -120,6 +125,8 @@
       "results va por tabla, en el orden de la petición: status applied o lost y el registro como quedó. La app toma de ahí el id y la versión.",
       "Un change_id ya aplicado responde applied sin aplicarse otra vez: reintentar es seguro.",
       "Si la versión no coincide, gana la hora de edición más reciente (corregida con el reloj del servidor); si empatan, se queda lo que ya estaba.",
+      "Borrar: id, base_version, change_id, updated_at y deleted true, sin data ni card. El registro queda marcado con deleted_at y nunca sale de la base; borrar una tarjeta no toca sus movimientos.",
+      "El borrado es definitivo: gana cualquier choque, editar lo borrado responde lost con el registro borrado y borrarlo otra vez responde applied.",
       "Un rechazo es 422 con path, field y rule, y no se guarda nada de esa subida."
     ],
     "examples": [
@@ -174,6 +181,7 @@
                   "id": "00000000-0000-4000-8000-000000000101",
                   "key": "00000000-0000-4000-8000-0000000000a1",
                   "version": 1,
+                  "deleted_at": null,
                   "data": {
                     "name": "Oro",
                     "cut_day": 5,
@@ -193,6 +201,7 @@
                   "id": "00000000-0000-4000-8000-000000000102",
                   "key": "00000000-0000-4000-8000-0000000000a2",
                   "version": 1,
+                  "deleted_at": null,
                   "data": {
                     "amount_cents": 45050,
                     "occurred_at": "2026-11-25T19:30:00-06:00",
@@ -216,6 +225,7 @@
                 "id": "00000000-0000-4000-8000-000000000101",
                 "key": "00000000-0000-4000-8000-0000000000a1",
                 "version": 1,
+                "deleted_at": null,
                 "data": {
                   "name": "Oro",
                   "cut_day": 5,
@@ -231,6 +241,7 @@
                 "id": "00000000-0000-4000-8000-000000000102",
                 "key": "00000000-0000-4000-8000-0000000000a2",
                 "version": 1,
+                "deleted_at": null,
                 "data": {
                   "amount_cents": 45050,
                   "occurred_at": "2026-11-25T19:30:00-06:00",
@@ -298,6 +309,7 @@
                   "id": "00000000-0000-4000-8000-000000000101",
                   "key": "00000000-0000-4000-8000-0000000000a1",
                   "version": 1,
+                  "deleted_at": null,
                   "data": {
                     "name": "Oro",
                     "cut_day": 5,
@@ -317,6 +329,7 @@
                   "id": "00000000-0000-4000-8000-000000000102",
                   "key": "00000000-0000-4000-8000-0000000000a2",
                   "version": 1,
+                  "deleted_at": null,
                   "data": {
                     "amount_cents": 45050,
                     "occurred_at": "2026-11-25T19:30:00-06:00",
@@ -340,6 +353,7 @@
                 "id": "00000000-0000-4000-8000-000000000101",
                 "key": "00000000-0000-4000-8000-0000000000a1",
                 "version": 1,
+                "deleted_at": null,
                 "data": {
                   "name": "Oro",
                   "cut_day": 5,
@@ -355,6 +369,7 @@
                 "id": "00000000-0000-4000-8000-000000000102",
                 "key": "00000000-0000-4000-8000-0000000000a2",
                 "version": 1,
+                "deleted_at": null,
                 "data": {
                   "amount_cents": 45050,
                   "occurred_at": "2026-11-25T19:30:00-06:00",
@@ -406,6 +421,7 @@
                   "id": "00000000-0000-4000-8000-000000000101",
                   "key": "00000000-0000-4000-8000-0000000000a1",
                   "version": 2,
+                  "deleted_at": null,
                   "data": {
                     "name": "Oro Plus",
                     "cut_day": 5,
@@ -428,6 +444,7 @@
                 "id": "00000000-0000-4000-8000-000000000101",
                 "key": "00000000-0000-4000-8000-0000000000a1",
                 "version": 2,
+                "deleted_at": null,
                 "data": {
                   "name": "Oro Plus",
                   "cut_day": 5,
@@ -478,6 +495,7 @@
                   "id": "00000000-0000-4000-8000-000000000101",
                   "key": "00000000-0000-4000-8000-0000000000a1",
                   "version": 2,
+                  "deleted_at": null,
                   "data": {
                     "name": "Oro Plus",
                     "cut_day": 5,
@@ -532,6 +550,132 @@
             "path": "changes.movements[0]",
             "field": "card.key",
             "rule": "not_found"
+          }
+        }
+      },
+      {
+        "name": "borrar la tarjeta: queda marcada con deleted_at y su movimiento sigue vivo",
+        "request": {
+          "cursor": 3,
+          "sent_at": "2026-11-26T05:58:00-06:00",
+          "changes": {
+            "cards": [
+              {
+                "id": "00000000-0000-4000-8000-000000000101",
+                "base_version": 2,
+                "change_id": "00000000-0000-4000-8000-0000000000c6",
+                "updated_at": "2026-11-26T05:56:00-06:00",
+                "deleted": true
+              }
+            ]
+          }
+        },
+        "status": 200,
+        "response": {
+          "results": {
+            "cards": [
+              {
+                "change_id": "00000000-0000-4000-8000-0000000000c6",
+                "status": "applied",
+                "record": {
+                  "id": "00000000-0000-4000-8000-000000000101",
+                  "key": "00000000-0000-4000-8000-0000000000a1",
+                  "version": 3,
+                  "deleted_at": "2026-11-26T12:00:00+00:00",
+                  "data": {
+                    "name": "Oro Plus",
+                    "cut_day": 5,
+                    "personal_limit_cents": 1000000,
+                    "bank_limit_cents": null,
+                    "used_at_creation_cents": 0,
+                    "installments_count_against_limit": true
+                  }
+                }
+              }
+            ],
+            "movements": [],
+            "monthly_income": []
+          },
+          "cursor": 4,
+          "has_more": false,
+          "changes": {
+            "cards": [
+              {
+                "id": "00000000-0000-4000-8000-000000000101",
+                "key": "00000000-0000-4000-8000-0000000000a1",
+                "version": 3,
+                "deleted_at": "2026-11-26T12:00:00+00:00",
+                "data": {
+                  "name": "Oro Plus",
+                  "cut_day": 5,
+                  "personal_limit_cents": 1000000,
+                  "bank_limit_cents": null,
+                  "used_at_creation_cents": 0,
+                  "installments_count_against_limit": true
+                }
+              }
+            ],
+            "movements": [],
+            "monthly_income": []
+          }
+        }
+      },
+      {
+        "name": "editar una tarjeta borrada: se pierde y vuelve borrada (el borrado es definitivo)",
+        "request": {
+          "cursor": 4,
+          "sent_at": "2026-11-26T05:58:00-06:00",
+          "changes": {
+            "cards": [
+              {
+                "id": "00000000-0000-4000-8000-000000000101",
+                "base_version": 3,
+                "change_id": "00000000-0000-4000-8000-0000000000c7",
+                "updated_at": "2026-11-26T05:57:00-06:00",
+                "data": {
+                  "name": "Oro Revivida",
+                  "cut_day": 5,
+                  "personal_limit_cents": 1000000,
+                  "bank_limit_cents": null,
+                  "used_at_creation_cents": 0,
+                  "installments_count_against_limit": true
+                }
+              }
+            ]
+          }
+        },
+        "status": 200,
+        "response": {
+          "results": {
+            "cards": [
+              {
+                "change_id": "00000000-0000-4000-8000-0000000000c7",
+                "status": "lost",
+                "record": {
+                  "id": "00000000-0000-4000-8000-000000000101",
+                  "key": "00000000-0000-4000-8000-0000000000a1",
+                  "version": 3,
+                  "deleted_at": "2026-11-26T12:00:00+00:00",
+                  "data": {
+                    "name": "Oro Plus",
+                    "cut_day": 5,
+                    "personal_limit_cents": 1000000,
+                    "bank_limit_cents": null,
+                    "used_at_creation_cents": 0,
+                    "installments_count_against_limit": true
+                  }
+                }
+              }
+            ],
+            "movements": [],
+            "monthly_income": []
+          },
+          "cursor": 4,
+          "has_more": false,
+          "changes": {
+            "cards": [],
+            "movements": [],
+            "monthly_income": []
           }
         }
       }

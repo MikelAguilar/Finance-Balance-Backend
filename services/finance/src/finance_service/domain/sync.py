@@ -3,6 +3,9 @@
 Una subida trae registros completos. Cada uno es nuevo (`key`, la clave que generó la app) o una
 edición (`id` del servidor y `base_version`, la versión sobre la que editó). `change_id` identifica
 la edición: si llega dos veces, la segunda no se aplica.
+
+Borrar es una edición con `"deleted": true` y sin `data`: el registro queda marcado y nunca sale
+de la base. El borrado es definitivo: gana cualquier choque y nada lo revive.
 """
 
 from collections.abc import Callable, Mapping
@@ -23,6 +26,7 @@ from finance_service.domain.model import (
 from finance_service.domain.rules import (
     MAX_BIGINT,
     Fields,
+    flag,
     iso_instant,
     items,
     mapping,
@@ -33,7 +37,7 @@ from finance_service.domain.rules import (
 MAX_CHANGES = 500
 # `version` es INTEGER en la base.
 MAX_VERSION = 2**31 - 1
-CHANGE_FIELDS = ("key", "id", "base_version", "change_id", "updated_at", "data")
+CHANGE_FIELDS = ("key", "id", "base_version", "change_id", "updated_at", "deleted", "data")
 
 
 @dataclass(frozen=True)
@@ -60,7 +64,8 @@ class Change[T]:
     target: New | Edit
     change_id: UUID
     updated_at: datetime
-    value: T
+    # None: borrar el registro.
+    value: T | None
     card: CardRef | None = None
 
 
@@ -111,9 +116,21 @@ def parse_change[T](
     target = parse_target(fields)
     change_id = uuid_text(fields.required("change_id"), "change_id")
     updated_at = iso_instant(fields.required("updated_at"), "updated_at")
+    if flag(fields.optional("deleted", False), "deleted"):
+        reject_in_deletion(fields, target)
+        return Change(target, change_id, updated_at, None)
     data = mapping(fields.required("data"), "data")
     card = parse_card_ref(fields.required("card")) if with_card else None
     return Change(target, change_id, updated_at, parse(data), card)
+
+
+def reject_in_deletion(fields: Fields, target: New | Edit) -> None:
+    """Solo se borra lo que el servidor ya tiene, y un borrado no trae datos ni tarjeta."""
+    if isinstance(target, New):
+        raise InvalidField("deleted", "not_allowed")
+    for name in ("data", "card"):
+        if fields.optional(name) is not None:
+            raise InvalidField(name, "not_allowed")
 
 
 def parse_table[T](
@@ -205,6 +222,7 @@ class Current:
     version: int
     updated_at: datetime
     last_change_id: UUID | None
+    deleted: bool
 
 
 def corrected_time(updated_at: datetime, sent_at: datetime, now: datetime) -> datetime:
@@ -217,13 +235,21 @@ def corrected_time(updated_at: datetime, sent_at: datetime, now: datetime) -> da
 
 
 def decide(
-    change_id: UUID, base_version: int | None, edited_at: datetime, current: Current
+    change_id: UUID,
+    base_version: int | None,
+    edited_at: datetime,
+    current: Current,
+    *,
+    deleting: bool,
 ) -> Outcome:
     """Qué pasa con un cambio sobre un registro que ya está en el servidor. Un registro que el
     servidor no tiene se crea antes de llegar aquí."""
     if change_id == current.last_change_id:
         return Outcome.ALREADY_APPLIED
-    if base_version == current.version:
+    if current.deleted:
+        # El borrado es definitivo: borrarlo otra vez ya está hecho; editarlo, perdido.
+        return Outcome.ALREADY_APPLIED if deleting else Outcome.LOST
+    if deleting or base_version == current.version:
         return Outcome.APPLY
     # Dos ediciones concurrentes: gana la más reciente. Si empatan, se queda lo que llegó primero.
     return Outcome.APPLY if edited_at > current.updated_at else Outcome.LOST

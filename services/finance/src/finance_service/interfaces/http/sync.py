@@ -60,7 +60,14 @@ def movement_data(movement: Movement) -> dict[str, object]:
 
 
 def record[T](stored: Stored[T], data: dict[str, object]) -> dict[str, object]:
-    return {"id": str(stored.id), "key": str(stored.key), "version": stored.version, "data": data}
+    deleted_at = stored.deleted_at
+    return {
+        "id": str(stored.id),
+        "key": str(stored.key),
+        "version": stored.version,
+        "deleted_at": None if deleted_at is None else deleted_at.isoformat(),
+        "data": data,
+    }
 
 
 def card_json(stored: Stored[Card]) -> dict[str, object]:
