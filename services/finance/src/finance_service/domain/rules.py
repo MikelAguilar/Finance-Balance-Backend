@@ -1,9 +1,10 @@
 """Reglas de entrada que comparten tarjetas, movimientos e ingreso."""
 
 from collections.abc import Iterable, Mapping
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from enum import StrEnum
+from uuid import UUID
 
 from finance_service.domain.errors import InvalidField
 
@@ -91,3 +92,38 @@ def decimal_text(value: object, field: str) -> Decimal:
     if not number.is_finite():
         raise InvalidField(field, "format")
     return number
+
+
+def uuid_text(value: object, field: str) -> UUID:
+    if not isinstance(value, str):
+        raise InvalidField(field, "type")
+    try:
+        return UUID(value)
+    except ValueError:
+        raise InvalidField(field, "format") from None
+
+
+def iso_instant(value: object, field: str) -> datetime:
+    """Una fecha y hora ISO 8601 con offset (`2026-11-26T03:00:00+01:00`): sin offset no es un
+    instante, porque no se sabe en qué zona estaba el teléfono."""
+    if not isinstance(value, str):
+        raise InvalidField(field, "type")
+    try:
+        moment = datetime.fromisoformat(value)
+    except ValueError:
+        raise InvalidField(field, "format") from None
+    if moment.utcoffset() is None:
+        raise InvalidField(field, "missing_offset")
+    return moment
+
+
+def mapping(value: object, field: str) -> Mapping[str, object]:
+    if not isinstance(value, Mapping):
+        raise InvalidField(field, "type")
+    return value
+
+
+def items(value: object, field: str) -> list[object]:
+    if not isinstance(value, list):
+        raise InvalidField(field, "type")
+    return value

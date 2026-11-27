@@ -20,6 +20,7 @@ from finance_service.domain.rules import (
     decimal_text,
     flag,
     iso_date,
+    iso_instant,
     text,
     whole_number,
 )
@@ -110,15 +111,9 @@ class OccurredAt:
 
 def parse_occurred_at(value: object, now: datetime) -> OccurredAt:
     """Lee la fecha ISO 8601 con offset que manda la app (`2026-11-26T03:00:00+01:00`)."""
-    if not isinstance(value, str):
-        raise InvalidField("occurred_at", "type")
-    try:
-        moment = datetime.fromisoformat(value)
-    except ValueError:
-        raise InvalidField("occurred_at", "format") from None
+    moment = iso_instant(value, "occurred_at")
     offset = moment.utcoffset()
-    if offset is None:
-        raise InvalidField("occurred_at", "missing_offset")
+    assert offset is not None  # iso_instant ya lo exige
     minutes, seconds = divmod(int(offset.total_seconds()), 60)
     if seconds:
         raise InvalidField("occurred_at", "range")
@@ -189,6 +184,14 @@ KIND_FIELDS = {
     KindName.PAYMENT: ("payment_source",),
 }
 MOVEMENT_FIELDS = ("amount_cents", "occurred_at", "kind", "review_status", "owner_cut")
+
+
+def kind_name(kind: MovementKind) -> KindName:
+    if isinstance(kind, Installment):
+        return KindName.INSTALLMENT
+    if isinstance(kind, Payment):
+        return KindName.PAYMENT
+    return KindName.NORMAL
 
 
 @dataclass(frozen=True)
