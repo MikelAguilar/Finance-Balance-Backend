@@ -7,8 +7,10 @@ from enum import StrEnum
 
 from finance_service.domain.errors import InvalidField
 
-# El dinero se guarda en centavos en un BIGINT de PostgreSQL: este es su máximo.
-MAX_CENTS = 2**63 - 1
+# El máximo de un BIGINT de PostgreSQL. El dinero se guarda en centavos en uno, y el número de
+# cambio también.
+MAX_BIGINT = 2**63 - 1
+MAX_CENTS = MAX_BIGINT
 
 
 def whole_number(value: object, field: str, low: int, high: int) -> int:
