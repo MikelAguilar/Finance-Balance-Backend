@@ -33,6 +33,9 @@ from finance_service.infrastructure.db import CardRow, MonthlyIncomeRow, Movemen
 # Candado de PostgreSQL por cuenta. En SQL las mayúsculas no importan: el mutante "select" es
 # equivalente.
 LOCK_ACCOUNT = "SELECT pg_advisory_xact_lock(hashtextextended(:user_id, 0))"  # pragma: no mutate
+# La secuencia del número de cambio. PostgreSQL pasa a minúsculas los nombres sin comillas: el
+# mutante en mayúsculas es equivalente.
+CHANGE_SEQ = "finance.change_seq"  # pragma: no mutate
 
 
 def stored[T](row: SyncColumns, value: T) -> Stored[T]:
@@ -193,7 +196,6 @@ class SqlSyncStore:
             user_id=user_id,
             idempotency_key=key,
             version=1,
-            deleted_at=None,
             **values(write.value),
             **stamp(write),
         )
@@ -205,12 +207,13 @@ class SqlSyncStore:
         self, table: Table, user_id: UUID, id: UUID, version: int, write: Write[Any]
     ) -> Stored[Any]:
         model, read, values = TABLES[table]
-        row = self._db.scalars(select(model).where(model.id == id, model.user_id == user_id)).one()
+        # find ya comprobó que el registro es de la cuenta; el id es la llave primaria.
+        row = self._db.get_one(model, id)
         for column, value in {**values(write.value), **stamp(write)}.items():
             setattr(row, column, value)
         row.version = version
         # Cada escritura toma el siguiente número de cambio: así baja en la próxima descarga.
-        row.change_seq = func.nextval("finance.change_seq")
+        row.change_seq = func.nextval(CHANGE_SEQ)
         self._db.flush()
         return read(row)
 

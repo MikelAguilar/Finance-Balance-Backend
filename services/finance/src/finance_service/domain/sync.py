@@ -117,10 +117,13 @@ def parse_change[T](
 
 
 def parse_table[T](
-    changes: Fields, table: str, parse: Callable[[Mapping[str, object]], T], with_card: bool
+    values: list[object],
+    table: str,
+    parse: Callable[[Mapping[str, object]], T],
+    with_card: bool = False,
 ) -> list[Change[T]]:
     parsed = []
-    for index, value in enumerate(items(changes.optional(table, []), table)):
+    for index, value in enumerate(values):
         try:
             parsed.append(parse_change(value, parse, with_card=with_card))
         except InvalidField as error:
@@ -132,22 +135,19 @@ def parse_upload(data: Mapping[str, object], now: datetime) -> Upload:
     tables = ("cards", "movements", "monthly_income")
     try:
         changes = Fields(mapping(data["changes"], "changes"), tables)
+        lists = {table: items(changes.optional(table, []), table) for table in tables}
     except InvalidField as error:
         raise error if error.field == "changes" else error.at("changes") from None
     sent_at = iso_instant(Fields(data, data).required("sent_at"), "sent_at")
-    try:
-        counts = [len(items(changes.optional(table, []), table)) for table in tables]
-    except InvalidField as error:
-        raise error.at("changes") from None
-    if sum(counts) > MAX_CHANGES:
+    if sum(len(values) for values in lists.values()) > MAX_CHANGES:
         raise InvalidField("changes", "too_many")
     upload = Upload(
         sent_at=sent_at,
-        cards=parse_table(changes, "cards", parse_card, with_card=False),
+        cards=parse_table(lists["cards"], "cards", parse_card),
         movements=parse_table(
-            changes, "movements", lambda value: parse_movement(value, now), with_card=True
+            lists["movements"], "movements", lambda value: parse_movement(value, now), True
         ),
-        incomes=parse_table(changes, "monthly_income", parse_monthly_income, with_card=False),
+        incomes=parse_table(lists["monthly_income"], "monthly_income", parse_monthly_income),
     )
     reject_duplicates(upload)
     return upload
@@ -171,16 +171,21 @@ def reject_duplicates(upload: Upload) -> None:
     change_ids: set[UUID] = set()
     tables = (("cards", upload.cards), ("movements", upload.movements))
     for table, changes in (*tables, ("monthly_income", upload.incomes)):
-        targets: set[New | Edit] = set()
+        keys: set[UUID] = set()
+        ids: set[UUID] = set()
         for index, change in enumerate(changes):
+            path = f"changes.{table}[{index}]"
             target = change.target
-            same = New(target.key) if isinstance(target, New) else Edit(target.id, 0)
-            if same in targets:
-                field = "key" if isinstance(target, New) else "id"
-                raise InvalidField(field, "duplicate", f"changes.{table}[{index}]")
+            if isinstance(target, New):
+                if target.key in keys:
+                    raise InvalidField("key", "duplicate", path)
+                keys.add(target.key)
+            else:
+                if target.id in ids:
+                    raise InvalidField("id", "duplicate", path)
+                ids.add(target.id)
             if change.change_id in change_ids:
-                raise InvalidField("change_id", "duplicate", f"changes.{table}[{index}]")
-            targets.add(same)
+                raise InvalidField("change_id", "duplicate", path)
             change_ids.add(change.change_id)
 
 

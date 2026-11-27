@@ -381,6 +381,65 @@ def test_an_invalid_movement_rejects_the_cards_of_the_same_upload(phone, engine)
     assert count(engine, "cards", phone.user) == 0
 
 
+def test_editing_a_card_that_does_not_exist_names_its_position(phone) -> None:
+    missing = change(CARD, id=str(uuid4()), base_version=1)
+
+    assert rejection(phone.post(cards=[change(CARD), missing])) == {
+        "path": "changes.cards[1]",
+        "field": "id",
+        "rule": "not_found",
+    }
+
+
+def test_editing_a_movement_that_does_not_exist_names_its_position(phone) -> None:
+    card = records(phone.send(cards=[change(CARD)]), "cards")[0]
+    ok = change(MOVEMENT, card={"id": card["id"]})
+    missing = change(MOVEMENT, id=str(uuid4()), base_version=1, card={"id": card["id"]})
+
+    assert rejection(phone.post(movements=[ok, missing])) == {
+        "path": "changes.movements[1]",
+        "field": "id",
+        "rule": "not_found",
+    }
+
+
+def test_a_new_card_is_created_even_if_the_account_has_an_income(phone) -> None:
+    phone.send(monthly_income=[change({"amount_cents": 2_500_000})])
+
+    answer = phone.send(cards=[change(CARD)])
+
+    assert (statuses(answer, "cards"), records(answer, "cards")[0]["version"]) == (["applied"], 1)
+
+
+def test_another_accounts_income_does_not_clash_with_mine(client, engine) -> None:
+    other, mine = Phone(client, uuid4()), Phone(client, uuid4())
+    other.send(monthly_income=[change({"amount_cents": 9_000_000}, edited=NOW)])
+
+    answer = mine.send(
+        monthly_income=[change({"amount_cents": 1_000_000}, edited=NOW - timedelta(days=1))]
+    )
+
+    record = records(answer, "monthly_income")[0]
+    assert (statuses(answer, "monthly_income"), record["data"], record["version"]) == (
+        ["applied"],
+        {"amount_cents": 1_000_000},
+        1,
+    )
+    assert count(engine, "monthly_income", other.user) == 1
+
+
+def test_editing_one_card_leaves_the_others_as_they_were(phone) -> None:
+    gold, blue = records(
+        phone.send(cards=[change(CARD), change({**CARD, "name": "Azul"})]), "cards"
+    )
+
+    phone.send(cards=[change({**CARD, "name": "Platino"}, id=gold["id"], base_version=1)])
+
+    cards = {card["id"]: card for card in phone.send()["changes"]["cards"]}
+    assert (cards[gold["id"]]["data"]["name"], cards[gold["id"]]["version"]) == ("Platino", 2)
+    assert (cards[blue["id"]]["data"]["name"], cards[blue["id"]]["version"]) == ("Azul", 1)
+
+
 # --- Un escritor por cuenta ----------------------------------------------------------------------
 
 

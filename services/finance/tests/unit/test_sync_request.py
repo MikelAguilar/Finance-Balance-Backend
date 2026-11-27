@@ -148,6 +148,7 @@ def change_error(change: dict, table: str = "cards") -> tuple:
         ({**new(2, CARD), "key": "no-es-uuid"}, ("key", "format")),
         ({**new(2, CARD), "id": U(5)}, ("key", "not_allowed")),
         ({**new(2, CARD), "change_id": None}, ("change_id", "required")),
+        ({**new(2, CARD), "change_id": "no-es-uuid"}, ("change_id", "format")),
         ({**new(2, CARD), "updated_at": "2026-11-26T05:00:00"}, ("updated_at", "missing_offset")),
         ({**new(2, CARD), "data": None}, ("data", "required")),
         ({**new(2, CARD), "data": []}, ("data", "type")),
@@ -167,6 +168,7 @@ def test_an_invalid_change_names_its_position_the_field_and_the_rule(change, exp
         ({"base_version": 0}, ("base_version", "range")),
         ({"base_version": 2**31}, ("base_version", "range")),
         ({"base_version": True}, ("base_version", "type")),
+        ({"base_version": 1, "id": "no-es-uuid"}, ("id", "format")),
     ],
 )
 def test_an_edit_needs_the_version_it_was_made_on(edit: dict, expected: tuple) -> None:
@@ -219,6 +221,18 @@ def test_the_same_change_twice_is_a_duplicate_even_in_another_table() -> None:
     movement = new(2, MOVEMENT, change=1, card={"key": U(1)})
     error = rejected(upload(cards=[new(1, CARD)], movements=[movement]))
     assert error == {"path": "changes.movements[0]", "field": "change_id", "rule": "duplicate"}
+
+
+def test_the_same_income_twice_is_a_duplicate() -> None:
+    income = {"amount_cents": 1}
+    error = rejected(upload(monthly_income=[new(1, income), new(1, income, change=2)]))
+    assert error == {"path": "changes.monthly_income[1]", "field": "key", "rule": "duplicate"}
+
+
+def test_edits_of_two_different_records_are_not_duplicates() -> None:
+    first = {**new(2, CARD), "key": None, "id": U(5), "base_version": 1}
+    second = {**new(3, CARD), "key": None, "id": U(6), "base_version": 1}
+    assert len(parse_sync_request(upload(cards=[first, second]), NOW).upload.cards) == 2
 
 
 def test_the_same_key_in_two_tables_is_not_a_duplicate() -> None:
