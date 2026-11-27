@@ -11,7 +11,7 @@ Backend de Finance Balance, una aplicación personal de finanzas para Android. E
 
 ## Estado
 
-En desarrollo. Hoy están disponibles el registro de cuentas, el inicio y cierre de sesión por dispositivo, la renovación de sesión, el cambio de contraseña, el perfil, la lista de dispositivos y la eliminación de la cuenta. El servicio de finanzas ya existe y solo acepta peticiones con una sesión activa. Ya tiene las tablas y reglas de tarjetas, movimientos (cargos, compras a meses y pagos) e ingreso mensual, y la sincronización completa: la app sube sus cambios (también los hechos sin red) y descarga lo que cambió, por páginas.
+En desarrollo. Hoy están disponibles el registro de cuentas, el inicio y cierre de sesión por dispositivo, la renovación de sesión, el cambio de contraseña, el perfil, la lista de dispositivos y la eliminación de la cuenta. El servicio de finanzas ya existe y solo acepta peticiones con una sesión activa. Ya tiene las tablas y reglas de tarjetas, movimientos (cargos, compras a meses y pagos) e ingreso mensual, y la sincronización completa: la app sube sus cambios (también los hechos sin red y los borrados) y descarga lo que cambió, por páginas.
 
 ## Arquitectura
 
@@ -132,7 +132,7 @@ Cada escritura en finanzas toma el siguiente número de una secuencia (`change_s
 - Cada página trae hasta 500 registros en orden, el `cursor` nuevo y `has_more`.
 - Si un movimiento de la página apunta a una tarjeta que todavía no se envió, la tarjeta viaja en esa misma página.
 - Cada sincronización toma un candado por cuenta: dos teléfonos de la misma cuenta van uno detrás del otro y nunca llega una página a medias.
-- Cada registro trae `id`, `key` (la clave que generó la app), `version` y `data` con la misma forma que la app sube.
+- Cada registro trae `id`, `key` (la clave que generó la app), `version`, `deleted_at` (`null` si está vivo) y `data` con la misma forma que la app sube. Lo borrado baja como cualquier cambio para que cada teléfono lo oculte.
 
 ### Sincronización: subida de cambios
 
@@ -143,6 +143,14 @@ La app manda en la misma llamada lo que cambió sin red: `sent_at` (la hora de s
 - Reintentar es seguro: la clave de cada registro nuevo y el `change_id` de cada edición evitan duplicar o aplicar dos veces.
 - Crear un ingreso cuando ya hay uno vigente se resuelve como un choque con él.
 - `results` dice, en el orden de la petición, si cada cambio quedó `applied` o `lost` y cómo quedó el registro. Si algo no vale (`not_found`, `duplicate`, `too_many` o una regla de los datos), responde `422` y no se guarda nada.
+
+### Borrado lógico
+
+- Borrar es una edición con `"deleted": true` y sin `data` (ni `card`): `id`, `base_version`, `change_id` y `updated_at`. El servidor marca `deleted_at` con su hora y sube la versión; la fila nunca sale de la base.
+- El borrado es definitivo: gana cualquier choque, editar lo borrado responde `lost` con el registro borrado y borrarlo otra vez responde `applied`.
+- Borrar una tarjeta no toca sus movimientos: siguen vivos y se pueden agregar más.
+- Borrar el ingreso vigente deja su lugar libre, también para uno nuevo en la misma subida.
+- La base rechaza el `DELETE` de cualquier fila sin `deleted_at` (migración `0007`). La API nunca elimina filas; solo la limpieza manual que se hace después de un respaldo de la base puede eliminar las ya marcadas. Una tarjeta con movimientos vivos no se puede eliminar.
 
 `services/finance/contract/sync-examples.json` tiene peticiones y respuestas reales de descarga y de subida; las pruebas de Python las comparan con lo que contesta el servidor.
 
