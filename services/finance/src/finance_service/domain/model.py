@@ -112,9 +112,8 @@ class OccurredAt:
 def parse_occurred_at(value: object, now: datetime) -> OccurredAt:
     """Lee la fecha ISO 8601 con offset que manda la app (`2026-11-26T03:00:00+01:00`)."""
     moment = iso_instant(value, "occurred_at")
-    offset = moment.utcoffset()
-    assert offset is not None  # iso_instant ya lo exige
-    minutes, seconds = divmod(int(offset.total_seconds()), 60)
+    # iso_instant ya exigió el offset.
+    minutes, seconds = divmod(int(moment.utcoffset().total_seconds()), 60)
     if seconds:
         raise InvalidField("occurred_at", "range")
     if moment > now + MAX_AHEAD:

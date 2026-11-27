@@ -15,7 +15,6 @@ from finance_service.domain.sync import (
     CardRef,
     Change,
     Edit,
-    New,
     Outcome,
     Upload,
     corrected_time,
@@ -64,11 +63,11 @@ class Applier:
         return Results(cards, movements, incomes)
 
     def _apply_movement(self, index: int, change: Change[Any]) -> Result[Any]:
+        # El dominio ya exigió la tarjeta de cada movimiento: aquí siempre viene.
         card_id = self._card_id(change.card, f"changes.{Table.MOVEMENTS}[{index}]")
         return self._apply(Table.MOVEMENTS, index, change, CardMovement(card_id, change.value))
 
-    def _card_id(self, ref: CardRef | None, path: str) -> UUID:
-        assert ref is not None  # el dominio exige la tarjeta de cada movimiento
+    def _card_id(self, ref: CardRef, path: str) -> UUID:
         if ref.id is not None:
             found = self._store.find(Table.CARDS, self._user_id, id=ref.id)
             field = "card.id"
@@ -96,21 +95,19 @@ class Applier:
     def _apply(self, table: Table, index: int, change: Change[Any], value: Any) -> Result[Any]:
         existing = self._existing(table, change, f"changes.{table}[{index}]")
         target = change.target
-        base_version = target.base_version if isinstance(target, Edit) else None
         edited_at = corrected_time(change.updated_at, self._upload.sent_at, self._now)
-        current = existing.current if existing else None
-        outcome = decide(change.change_id, base_version, edited_at, current)
         write = Write(value, edited_at, change.change_id, self._now)
-        if outcome is Outcome.CREATE:
-            # Solo un registro nuevo llega sin uno existente (una edición sin él es not_found).
-            assert isinstance(target, New)
+        if existing is None:
+            # Un registro nuevo que el servidor no tiene (una edición sin registro ya fue
+            # not_found, así que aquí el destino siempre es una clave).
             record = self._store.create(table, self._user_id, target.key, write)
-        elif outcome is Outcome.APPLY:
-            assert existing is not None
+            return Result(change.change_id, True, record)
+        base_version = target.base_version if isinstance(target, Edit) else None
+        outcome = decide(change.change_id, base_version, edited_at, existing.current)
+        if outcome is Outcome.APPLY:
             version = existing.current.version + 1
             record = self._store.update(table, self._user_id, existing.stored.id, version, write)
         else:
-            assert existing is not None
             record = existing.stored
         return Result(change.change_id, outcome is not Outcome.LOST, record)
 

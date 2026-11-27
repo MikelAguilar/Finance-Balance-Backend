@@ -28,10 +28,6 @@ def test_an_edit_after_the_send_is_a_clock_moved_back_and_counts_as_the_send() -
 # --- La decisión ---------------------------------------------------------------------------------
 
 
-def test_a_record_the_server_does_not_have_is_created() -> None:
-    assert decide(CHANGE, None, T, None) is Outcome.CREATE
-
-
 def test_a_change_already_applied_is_not_applied_again() -> None:
     # Aunque la versión ya no coincida y su hora sea vieja: es un reintento, no un choque.
     old = T - timedelta(days=1)

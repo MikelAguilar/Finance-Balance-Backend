@@ -188,7 +188,6 @@ def reject_duplicates(upload: Upload) -> None:
 
 
 class Outcome(StrEnum):
-    CREATE = "create"
     APPLY = "apply"
     ALREADY_APPLIED = "already_applied"
     LOST = "lost"
@@ -213,10 +212,10 @@ def corrected_time(updated_at: datetime, sent_at: datetime, now: datetime) -> da
 
 
 def decide(
-    change_id: UUID, base_version: int | None, edited_at: datetime, current: Current | None
+    change_id: UUID, base_version: int | None, edited_at: datetime, current: Current
 ) -> Outcome:
-    if current is None:
-        return Outcome.CREATE
+    """Qué pasa con un cambio sobre un registro que ya está en el servidor. Un registro que el
+    servidor no tiene se crea antes de llegar aquí."""
     if change_id == current.last_change_id:
         return Outcome.ALREADY_APPLIED
     if base_version == current.version:
