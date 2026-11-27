@@ -134,3 +134,10 @@ def make_income() -> Callable[..., dict]:
         return {**sync_columns(), "amount_cents": 2_500_000, **changes}
 
     return _make
+
+
+@pytest.fixture
+def numbers_from_one(engine) -> None:
+    # Los ejemplos compartidos con la app traen cursores fijos: la secuencia empieza en 1.
+    with engine.begin() as connection:
+        connection.execute(text("ALTER SEQUENCE finance.change_seq RESTART WITH 1"))

@@ -13,7 +13,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 
-from finance_service.application.download import PAGE_SIZE, Download
+from finance_service.application.download import PAGE_SIZE
+from finance_service.application.sync import Sync
 from finance_service.config import Settings
 from finance_service.infrastructure.repositories import sql_store
 from finance_service.main import create_app
@@ -30,8 +31,9 @@ def client(engine, database_url: str) -> Iterator[TestClient]:
 
 @pytest.fixture
 def download_in_pages_of(engine):
-    def _make(size: int) -> Download:
-        return Download(sql_store(sessionmaker(engine)), page_size=size)
+    def _make(size: int):
+        sync = Sync(sql_store(sessionmaker(engine)), page_size=size)
+        return lambda user_id, after: sync(user_id, {"cursor": after}).page
 
     return _make
 
@@ -59,13 +61,6 @@ def ids(records: list) -> list:
 
 
 # --- El contrato con la app ----------------------------------------------------------------------
-
-
-@pytest.fixture
-def numbers_from_one(engine) -> None:
-    # Los ejemplos traen cursores fijos: la secuencia empieza en 1 para esta prueba.
-    with engine.begin() as connection:
-        connection.execute(text("ALTER SEQUENCE finance.change_seq RESTART WITH 1"))
 
 
 def test_the_examples_shared_with_the_app_are_what_the_server_answers(
@@ -136,6 +131,7 @@ def test_an_account_never_downloads_another_accounts_records(
 
 def test_a_new_account_downloads_nothing_and_keeps_its_cursor(client) -> None:
     assert sync(client, uuid4(), 0) == {
+        "results": {"cards": [], "movements": [], "monthly_income": []},
         "cursor": 0,
         "has_more": False,
         "changes": {"cards": [], "movements": [], "monthly_income": []},

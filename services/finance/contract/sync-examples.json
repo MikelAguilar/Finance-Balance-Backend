@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "description": "Ejemplos reales de POST /finance/sync. Las pruebas de Python siembran la base, llaman al endpoint y comparan la respuesta con este archivo. La app puede usarlo en su servidor falso. El gateway pone X-User-Id; la app solo manda su token.",
   "rules": [
     "La app manda el último cursor que recibió (0 la primera vez) y lo reemplaza por el de la respuesta solo después de guardar la página.",
@@ -13,8 +13,15 @@
   "examples": [
     {
       "name": "primera descarga de una cuenta",
-      "request": {"cursor": 0},
+      "request": {
+        "cursor": 0
+      },
       "response": {
+        "results": {
+          "cards": [],
+          "movements": [],
+          "monthly_income": []
+        },
         "cursor": 4,
         "has_more": false,
         "changes": {
@@ -47,7 +54,9 @@
                 "months": 12,
                 "monthly_rate": "0.015000"
               },
-              "card": {"id": "00000000-0000-4000-8000-000000000001"}
+              "card": {
+                "id": "00000000-0000-4000-8000-000000000001"
+              }
             },
             {
               "id": "00000000-0000-4000-8000-000000000003",
@@ -61,7 +70,9 @@
                 "kind": "payment",
                 "payment_source": "debit"
               },
-              "card": {"id": "00000000-0000-4000-8000-000000000001"}
+              "card": {
+                "id": "00000000-0000-4000-8000-000000000001"
+              }
             }
           ],
           "monthly_income": [
@@ -69,7 +80,9 @@
               "id": "00000000-0000-4000-8000-000000000004",
               "key": "00000000-0000-4000-8000-0000000000a4",
               "version": 1,
-              "data": {"amount_cents": 2500000}
+              "data": {
+                "amount_cents": 2500000
+              }
             }
           ]
         }
@@ -77,12 +90,451 @@
     },
     {
       "name": "sin cambios desde la última descarga",
-      "request": {"cursor": 4},
+      "request": {
+        "cursor": 4
+      },
       "response": {
+        "results": {
+          "cards": [],
+          "movements": [],
+          "monthly_income": []
+        },
         "cursor": 4,
         "has_more": false,
-        "changes": {"cards": [], "movements": [], "monthly_income": []}
+        "changes": {
+          "cards": [],
+          "movements": [],
+          "monthly_income": []
+        }
       }
     }
-  ]
+  ],
+  "upload": {
+    "description": "Subidas de una misma cuenta, en orden. El servidor tiene el reloj en `now` y asigna los ids …0101, …0102 en orden. El teléfono va 2 minutos atrasado: el servidor corrige sus horas con sent_at.",
+    "now": "2026-11-26T12:00:00+00:00",
+    "user_id": "00000000-0000-4000-8000-0000000000ff",
+    "rules": [
+      "Crear: key (la clave que genera la app), sin id. Editar: id y base_version (la versión sobre la que se editó).",
+      "Siempre: change_id (uno por edición), updated_at con offset y data con la misma forma que la descarga. Un movimiento trae card con id o con key.",
+      "sent_at es la hora del teléfono al enviar; solo es obligatorio si hay changes.",
+      "results va por tabla, en el orden de la petición: status applied o lost y el registro como quedó. La app toma de ahí el id y la versión.",
+      "Un change_id ya aplicado responde applied sin aplicarse otra vez: reintentar es seguro.",
+      "Si la versión no coincide, gana la hora de edición más reciente (corregida con el reloj del servidor); si empatan, se queda lo que ya estaba.",
+      "Un rechazo es 422 con path, field y rule, y no se guarda nada de esa subida."
+    ],
+    "examples": [
+      {
+        "name": "subida sin red: una tarjeta y su movimiento, por clave",
+        "request": {
+          "cursor": 0,
+          "sent_at": "2026-11-26T05:58:00-06:00",
+          "changes": {
+            "cards": [
+              {
+                "key": "00000000-0000-4000-8000-0000000000a1",
+                "change_id": "00000000-0000-4000-8000-0000000000c1",
+                "updated_at": "2026-11-26T05:40:00-06:00",
+                "data": {
+                  "name": "Oro",
+                  "cut_day": 5,
+                  "personal_limit_cents": 1000000,
+                  "bank_limit_cents": null,
+                  "used_at_creation_cents": 0,
+                  "installments_count_against_limit": true
+                }
+              }
+            ],
+            "movements": [
+              {
+                "key": "00000000-0000-4000-8000-0000000000a2",
+                "change_id": "00000000-0000-4000-8000-0000000000c2",
+                "updated_at": "2026-11-26T05:41:00-06:00",
+                "card": {
+                  "key": "00000000-0000-4000-8000-0000000000a1"
+                },
+                "data": {
+                  "amount_cents": 45050,
+                  "occurred_at": "2026-11-25T19:30:00-06:00",
+                  "review_status": "confirmed",
+                  "owner_cut": "2026-12-05",
+                  "kind": "normal"
+                }
+              }
+            ]
+          }
+        },
+        "status": 200,
+        "response": {
+          "results": {
+            "cards": [
+              {
+                "change_id": "00000000-0000-4000-8000-0000000000c1",
+                "status": "applied",
+                "record": {
+                  "id": "00000000-0000-4000-8000-000000000101",
+                  "key": "00000000-0000-4000-8000-0000000000a1",
+                  "version": 1,
+                  "data": {
+                    "name": "Oro",
+                    "cut_day": 5,
+                    "personal_limit_cents": 1000000,
+                    "bank_limit_cents": null,
+                    "used_at_creation_cents": 0,
+                    "installments_count_against_limit": true
+                  }
+                }
+              }
+            ],
+            "movements": [
+              {
+                "change_id": "00000000-0000-4000-8000-0000000000c2",
+                "status": "applied",
+                "record": {
+                  "id": "00000000-0000-4000-8000-000000000102",
+                  "key": "00000000-0000-4000-8000-0000000000a2",
+                  "version": 1,
+                  "data": {
+                    "amount_cents": 45050,
+                    "occurred_at": "2026-11-25T19:30:00-06:00",
+                    "review_status": "confirmed",
+                    "owner_cut": "2026-12-05",
+                    "kind": "normal"
+                  },
+                  "card": {
+                    "id": "00000000-0000-4000-8000-000000000101"
+                  }
+                }
+              }
+            ],
+            "monthly_income": []
+          },
+          "cursor": 2,
+          "has_more": false,
+          "changes": {
+            "cards": [
+              {
+                "id": "00000000-0000-4000-8000-000000000101",
+                "key": "00000000-0000-4000-8000-0000000000a1",
+                "version": 1,
+                "data": {
+                  "name": "Oro",
+                  "cut_day": 5,
+                  "personal_limit_cents": 1000000,
+                  "bank_limit_cents": null,
+                  "used_at_creation_cents": 0,
+                  "installments_count_against_limit": true
+                }
+              }
+            ],
+            "movements": [
+              {
+                "id": "00000000-0000-4000-8000-000000000102",
+                "key": "00000000-0000-4000-8000-0000000000a2",
+                "version": 1,
+                "data": {
+                  "amount_cents": 45050,
+                  "occurred_at": "2026-11-25T19:30:00-06:00",
+                  "review_status": "confirmed",
+                  "owner_cut": "2026-12-05",
+                  "kind": "normal"
+                },
+                "card": {
+                  "id": "00000000-0000-4000-8000-000000000101"
+                }
+              }
+            ],
+            "monthly_income": []
+          }
+        }
+      },
+      {
+        "name": "reintento de la misma subida (la respuesta anterior se perdió): nada se duplica",
+        "request": {
+          "cursor": 0,
+          "sent_at": "2026-11-26T05:58:00-06:00",
+          "changes": {
+            "cards": [
+              {
+                "key": "00000000-0000-4000-8000-0000000000a1",
+                "change_id": "00000000-0000-4000-8000-0000000000c1",
+                "updated_at": "2026-11-26T05:40:00-06:00",
+                "data": {
+                  "name": "Oro",
+                  "cut_day": 5,
+                  "personal_limit_cents": 1000000,
+                  "bank_limit_cents": null,
+                  "used_at_creation_cents": 0,
+                  "installments_count_against_limit": true
+                }
+              }
+            ],
+            "movements": [
+              {
+                "key": "00000000-0000-4000-8000-0000000000a2",
+                "change_id": "00000000-0000-4000-8000-0000000000c2",
+                "updated_at": "2026-11-26T05:41:00-06:00",
+                "card": {
+                  "key": "00000000-0000-4000-8000-0000000000a1"
+                },
+                "data": {
+                  "amount_cents": 45050,
+                  "occurred_at": "2026-11-25T19:30:00-06:00",
+                  "review_status": "confirmed",
+                  "owner_cut": "2026-12-05",
+                  "kind": "normal"
+                }
+              }
+            ]
+          }
+        },
+        "status": 200,
+        "response": {
+          "results": {
+            "cards": [
+              {
+                "change_id": "00000000-0000-4000-8000-0000000000c1",
+                "status": "applied",
+                "record": {
+                  "id": "00000000-0000-4000-8000-000000000101",
+                  "key": "00000000-0000-4000-8000-0000000000a1",
+                  "version": 1,
+                  "data": {
+                    "name": "Oro",
+                    "cut_day": 5,
+                    "personal_limit_cents": 1000000,
+                    "bank_limit_cents": null,
+                    "used_at_creation_cents": 0,
+                    "installments_count_against_limit": true
+                  }
+                }
+              }
+            ],
+            "movements": [
+              {
+                "change_id": "00000000-0000-4000-8000-0000000000c2",
+                "status": "applied",
+                "record": {
+                  "id": "00000000-0000-4000-8000-000000000102",
+                  "key": "00000000-0000-4000-8000-0000000000a2",
+                  "version": 1,
+                  "data": {
+                    "amount_cents": 45050,
+                    "occurred_at": "2026-11-25T19:30:00-06:00",
+                    "review_status": "confirmed",
+                    "owner_cut": "2026-12-05",
+                    "kind": "normal"
+                  },
+                  "card": {
+                    "id": "00000000-0000-4000-8000-000000000101"
+                  }
+                }
+              }
+            ],
+            "monthly_income": []
+          },
+          "cursor": 2,
+          "has_more": false,
+          "changes": {
+            "cards": [
+              {
+                "id": "00000000-0000-4000-8000-000000000101",
+                "key": "00000000-0000-4000-8000-0000000000a1",
+                "version": 1,
+                "data": {
+                  "name": "Oro",
+                  "cut_day": 5,
+                  "personal_limit_cents": 1000000,
+                  "bank_limit_cents": null,
+                  "used_at_creation_cents": 0,
+                  "installments_count_against_limit": true
+                }
+              }
+            ],
+            "movements": [
+              {
+                "id": "00000000-0000-4000-8000-000000000102",
+                "key": "00000000-0000-4000-8000-0000000000a2",
+                "version": 1,
+                "data": {
+                  "amount_cents": 45050,
+                  "occurred_at": "2026-11-25T19:30:00-06:00",
+                  "review_status": "confirmed",
+                  "owner_cut": "2026-12-05",
+                  "kind": "normal"
+                },
+                "card": {
+                  "id": "00000000-0000-4000-8000-000000000101"
+                }
+              }
+            ],
+            "monthly_income": []
+          }
+        }
+      },
+      {
+        "name": "edición sobre la versión actual: se aplica y la versión sube",
+        "request": {
+          "cursor": 2,
+          "sent_at": "2026-11-26T05:58:00-06:00",
+          "changes": {
+            "cards": [
+              {
+                "id": "00000000-0000-4000-8000-000000000101",
+                "base_version": 1,
+                "change_id": "00000000-0000-4000-8000-0000000000c3",
+                "updated_at": "2026-11-26T05:50:00-06:00",
+                "data": {
+                  "name": "Oro Plus",
+                  "cut_day": 5,
+                  "personal_limit_cents": 1000000,
+                  "bank_limit_cents": null,
+                  "used_at_creation_cents": 0,
+                  "installments_count_against_limit": true
+                }
+              }
+            ]
+          }
+        },
+        "status": 200,
+        "response": {
+          "results": {
+            "cards": [
+              {
+                "change_id": "00000000-0000-4000-8000-0000000000c3",
+                "status": "applied",
+                "record": {
+                  "id": "00000000-0000-4000-8000-000000000101",
+                  "key": "00000000-0000-4000-8000-0000000000a1",
+                  "version": 2,
+                  "data": {
+                    "name": "Oro Plus",
+                    "cut_day": 5,
+                    "personal_limit_cents": 1000000,
+                    "bank_limit_cents": null,
+                    "used_at_creation_cents": 0,
+                    "installments_count_against_limit": true
+                  }
+                }
+              }
+            ],
+            "movements": [],
+            "monthly_income": []
+          },
+          "cursor": 3,
+          "has_more": false,
+          "changes": {
+            "cards": [
+              {
+                "id": "00000000-0000-4000-8000-000000000101",
+                "key": "00000000-0000-4000-8000-0000000000a1",
+                "version": 2,
+                "data": {
+                  "name": "Oro Plus",
+                  "cut_day": 5,
+                  "personal_limit_cents": 1000000,
+                  "bank_limit_cents": null,
+                  "used_at_creation_cents": 0,
+                  "installments_count_against_limit": true
+                }
+              }
+            ],
+            "movements": [],
+            "monthly_income": []
+          }
+        }
+      },
+      {
+        "name": "choque: otro teléfono editó la versión 1 antes que la edición aplicada; se pierde",
+        "request": {
+          "cursor": 3,
+          "sent_at": "2026-11-26T05:58:00-06:00",
+          "changes": {
+            "cards": [
+              {
+                "id": "00000000-0000-4000-8000-000000000101",
+                "base_version": 1,
+                "change_id": "00000000-0000-4000-8000-0000000000c4",
+                "updated_at": "2026-11-26T05:45:00-06:00",
+                "data": {
+                  "name": "Oro Clásica",
+                  "cut_day": 5,
+                  "personal_limit_cents": 1000000,
+                  "bank_limit_cents": null,
+                  "used_at_creation_cents": 0,
+                  "installments_count_against_limit": true
+                }
+              }
+            ]
+          }
+        },
+        "status": 200,
+        "response": {
+          "results": {
+            "cards": [
+              {
+                "change_id": "00000000-0000-4000-8000-0000000000c4",
+                "status": "lost",
+                "record": {
+                  "id": "00000000-0000-4000-8000-000000000101",
+                  "key": "00000000-0000-4000-8000-0000000000a1",
+                  "version": 2,
+                  "data": {
+                    "name": "Oro Plus",
+                    "cut_day": 5,
+                    "personal_limit_cents": 1000000,
+                    "bank_limit_cents": null,
+                    "used_at_creation_cents": 0,
+                    "installments_count_against_limit": true
+                  }
+                }
+              }
+            ],
+            "movements": [],
+            "monthly_income": []
+          },
+          "cursor": 3,
+          "has_more": false,
+          "changes": {
+            "cards": [],
+            "movements": [],
+            "monthly_income": []
+          }
+        }
+      },
+      {
+        "name": "rechazo: un movimiento apunta a una tarjeta que no existe; no se guarda nada",
+        "request": {
+          "cursor": 3,
+          "sent_at": "2026-11-26T05:58:00-06:00",
+          "changes": {
+            "movements": [
+              {
+                "key": "00000000-0000-4000-8000-0000000000a5",
+                "change_id": "00000000-0000-4000-8000-0000000000c5",
+                "updated_at": "2026-11-26T05:55:00-06:00",
+                "card": {
+                  "key": "00000000-0000-4000-8000-0000000000a9"
+                },
+                "data": {
+                  "amount_cents": 45050,
+                  "occurred_at": "2026-11-25T19:30:00-06:00",
+                  "review_status": "confirmed",
+                  "owner_cut": "2026-12-05",
+                  "kind": "normal"
+                }
+              }
+            ]
+          }
+        },
+        "status": 422,
+        "response": {
+          "detail": {
+            "path": "changes.movements[0]",
+            "field": "card.key",
+            "rule": "not_found"
+          }
+        }
+      }
+    ]
+  }
 }
