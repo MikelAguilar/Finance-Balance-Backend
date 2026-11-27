@@ -203,9 +203,7 @@ class SqlSyncStore:
         self._db.flush()
         return read(row)
 
-    def update(
-        self, table: Table, user_id: UUID, id: UUID, version: int, write: Write[Any]
-    ) -> Stored[Any]:
+    def update(self, table: Table, id: UUID, version: int, write: Write[Any]) -> Stored[Any]:
         model, read, values = TABLES[table]
         # find ya comprobó que el registro es de la cuenta; el id es la llave primaria.
         row = self._db.get_one(model, id)

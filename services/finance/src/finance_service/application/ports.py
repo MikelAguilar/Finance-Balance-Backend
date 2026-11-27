@@ -64,9 +64,8 @@ class SyncStore(Protocol):
 
     def create(self, table: Table, user_id: UUID, key: UUID, write: Write[Any]) -> Stored[Any]: ...
 
-    def update(
-        self, table: Table, user_id: UUID, id: UUID, version: int, write: Write[Any]
-    ) -> Stored[Any]: ...
+    def update(self, table: Table, id: UUID, version: int, write: Write[Any]) -> Stored[Any]:
+        """Escribe sobre un registro que find ya devolvió para la cuenta."""
 
 
 class OpenStore(Protocol):

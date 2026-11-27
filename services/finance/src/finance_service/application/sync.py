@@ -106,7 +106,7 @@ class Applier:
         outcome = decide(change.change_id, base_version, edited_at, existing.current)
         if outcome is Outcome.APPLY:
             version = existing.current.version + 1
-            record = self._store.update(table, self._user_id, existing.stored.id, version, write)
+            record = self._store.update(table, existing.stored.id, version, write)
         else:
             record = existing.stored
         return Result(change.change_id, outcome is not Outcome.LOST, record)

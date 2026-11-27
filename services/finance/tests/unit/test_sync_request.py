@@ -204,6 +204,11 @@ def test_a_movement_date_is_checked_against_the_server_clock() -> None:
     assert change_error(new(2, late, card={"key": U(1)}), "movements") == ("occurred_at", "future")
 
 
+def test_an_invalid_income_names_its_position() -> None:
+    error = rejected(upload(monthly_income=[new(1, {"amount_cents": 0})]))
+    assert error == {"path": "changes.monthly_income[0]", "field": "amount_cents", "rule": "range"}
+
+
 # --- Repetidos -----------------------------------------------------------------------------------
 
 
