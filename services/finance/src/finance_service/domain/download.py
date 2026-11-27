@@ -1,6 +1,7 @@
 """Descarga por páginas: lo que cambió en el servidor después del cursor de la app."""
 
 from dataclasses import dataclass
+from datetime import datetime
 from heapq import merge
 from uuid import UUID
 
@@ -12,7 +13,8 @@ class Stored[T]:
     """Un registro como está en el servidor.
 
     `key` es la clave que generó la app al crearlo (así reconoce lo que creó sin red), `version`
-    la versión sobre la que editará y `seq` su número de cambio.
+    la versión sobre la que editará y `seq` su número de cambio. `deleted_at` dice cuándo se borró:
+    un registro borrado sigue bajando para que cada teléfono lo oculte.
     """
 
     id: UUID
@@ -20,6 +22,7 @@ class Stored[T]:
     version: int
     seq: int
     value: T
+    deleted_at: datetime | None = None
 
 
 @dataclass(frozen=True)

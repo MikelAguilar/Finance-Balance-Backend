@@ -40,7 +40,12 @@ CHANGE_SEQ = "finance.change_seq"  # pragma: no mutate
 
 def stored[T](row: SyncColumns, value: T) -> Stored[T]:
     return Stored(
-        id=row.id, key=row.idempotency_key, version=row.version, seq=row.change_seq, value=value
+        id=row.id,
+        key=row.idempotency_key,
+        version=row.version,
+        seq=row.change_seq,
+        value=value,
+        deleted_at=row.deleted_at,
     )
 
 
@@ -120,7 +125,10 @@ TABLES: dict[
 
 def existing_from(row: SyncColumns, read: Callable[[Any], Stored[Any]]) -> Existing[Any]:
     current = Current(
-        version=row.version, updated_at=row.updated_at, last_change_id=row.last_change_id
+        version=row.version,
+        updated_at=row.updated_at,
+        last_change_id=row.last_change_id,
+        deleted=row.deleted_at is not None,
     )
     return Existing(stored=read(row), current=current)
 
@@ -207,7 +215,9 @@ class SqlSyncStore:
         model, read, values = TABLES[table]
         # find ya comprobó que el registro es de la cuenta; el id es la llave primaria.
         row = self._db.get_one(model, id)
-        for column, value in {**values(write.value), **stamp(write)}.items():
+        # Borrar es marcar: los datos se quedan como estaban y la fila nunca sale de la base.
+        changed = {"deleted_at": write.now} if write.value is None else values(write.value)
+        for column, value in {**changed, **stamp(write)}.items():
             setattr(row, column, value)
         row.version = version
         # Cada escritura toma el siguiente número de cambio: así baja en la próxima descarga.

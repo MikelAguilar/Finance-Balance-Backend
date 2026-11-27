@@ -63,7 +63,10 @@ class Applier:
         return Results(cards, movements, incomes)
 
     def _apply_movement(self, index: int, change: Change[Any]) -> Result[Any]:
-        # El dominio ya exigió la tarjeta de cada movimiento: aquí siempre viene.
+        if change.value is None:
+            # Un borrado no trae tarjeta: el movimiento conserva la suya.
+            return self._apply(Table.MOVEMENTS, index, change, None)
+        # El dominio ya exigió la tarjeta de cada movimiento que trae datos: aquí siempre viene.
         card_id = self._card_id(change.card, f"changes.{Table.MOVEMENTS}[{index}]")
         return self._apply(Table.MOVEMENTS, index, change, CardMovement(card_id, change.value))
 
@@ -103,7 +106,9 @@ class Applier:
             record = self._store.create(table, self._user_id, target.key, write)
             return Result(change.change_id, True, record)
         base_version = target.base_version if isinstance(target, Edit) else None
-        outcome = decide(change.change_id, base_version, edited_at, existing.current)
+        outcome = decide(
+            change.change_id, base_version, edited_at, existing.current, deleting=value is None
+        )
         if outcome is Outcome.APPLY:
             version = existing.current.version + 1
             record = self._store.update(table, existing.stored.id, version, write)

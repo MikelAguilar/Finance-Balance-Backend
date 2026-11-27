@@ -8,8 +8,11 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import text
+from sqlalchemy.orm import sessionmaker
 
+from finance_service.application.sync import Sync
 from finance_service.config import Settings
+from finance_service.infrastructure.repositories import sql_store
 from finance_service.main import create_app
 
 CARD = {"name": "Oro", "cut_day": 5, "personal_limit_cents": 100_000, "used_at_creation_cents": 0}
@@ -461,3 +464,158 @@ def test_an_upload_waits_while_another_sync_of_the_same_account_is_running(engin
         connection.close()
     worker.join(timeout=10)
     assert answers[0].status_code == 200
+
+
+# --- Borrados ------------------------------------------------------------------------------------
+
+
+def deletion(record: dict, *, edited: datetime | None = None) -> dict:
+    """Borrar lo que la app ya tiene del servidor: una edición sin datos."""
+    return {
+        "id": record["id"],
+        "base_version": record["version"],
+        "change_id": str(uuid4()),
+        "updated_at": iso(edited or NOW),
+        "deleted": True,
+    }
+
+
+def row(engine, table: str, id: str) -> dict:
+    with engine.connect() as connection:
+        query = text(f"SELECT version, deleted_at FROM finance.{table} WHERE id = :id")
+        return dict(connection.execute(query, {"id": id}).mappings().one())
+
+
+def test_a_deleted_card_reaches_the_other_phone_marked_and_stays_in_the_base(
+    client, engine
+) -> None:
+    user = uuid4()
+    first, second = Phone(client, user), Phone(client, user)
+    card = records(first.send(cards=[change(CARD)]), "cards")[0]
+    cursor = second.send()["cursor"]
+
+    answer = first.send(cards=[deletion(card)])
+
+    deleted = records(answer, "cards")[0]
+    assert statuses(answer, "cards") == ["applied"]
+    assert deleted["version"] == 2 and deleted["deleted_at"] is not None
+    assert deleted["data"] == card["data"]
+    assert second.send(cursor=cursor)["changes"]["cards"] == [deleted]
+    assert row(engine, "cards", card["id"])["deleted_at"] is not None
+    assert count(engine, "cards", user) == 1
+
+
+def test_a_live_record_comes_down_without_deleted_at(phone) -> None:
+    answer = phone.send(cards=[change(CARD)])
+    assert answer["changes"]["cards"][0]["deleted_at"] is None
+
+
+def test_deleting_a_card_keeps_its_movements_alive(phone, engine) -> None:
+    key = uuid4()
+    first = phone.send(
+        cards=[change(CARD, key=key)], movements=[change(MOVEMENT, card={"key": str(key)})]
+    )
+    card, movement = records(first, "cards")[0], records(first, "movements")[0]
+
+    phone.send(cards=[deletion(card)])
+    # La tarjeta sigue en la base: se le pueden agregar movimientos.
+    later = phone.send(movements=[change(MOVEMENT, card={"id": card["id"]})])
+
+    assert row(engine, "movements", movement["id"]) == {"version": 1, "deleted_at": None}
+    assert statuses(later, "movements") == ["applied"]
+    assert records(later, "movements")[0]["deleted_at"] is None
+
+
+def test_a_deletion_wins_over_a_later_edit_from_another_phone(client) -> None:
+    user = uuid4()
+    first, second = Phone(client, user), Phone(client, user)
+    card = records(first.send(cards=[change(CARD)]), "cards")[0]
+    second.send(cards=[change({**CARD, "name": "Azul"}, id=card["id"], base_version=1, edited=NOW)])
+
+    # Borró sobre la versión 1 y antes que la edición: igual gana.
+    answer = first.send(cards=[deletion(card, edited=NOW - timedelta(hours=1))])
+
+    assert statuses(answer, "cards") == ["applied"]
+    assert records(answer, "cards")[0]["version"] == 3
+
+
+def test_an_edit_of_a_deleted_record_is_lost_and_brings_it_back_deleted(client) -> None:
+    user = uuid4()
+    first, second = Phone(client, user), Phone(client, user)
+    card = records(first.send(cards=[change(CARD)]), "cards")[0]
+    deleted = records(first.send(cards=[deletion(card)]), "cards")[0]
+
+    edit = change({**CARD, "name": "Azul"}, id=card["id"], base_version=2, edited=NOW)
+    answer = second.send(cards=[edit])
+
+    assert statuses(answer, "cards") == ["lost"]
+    assert records(answer, "cards") == [deleted]
+
+
+def test_deleting_a_deleted_record_is_applied_without_a_new_version(client, engine) -> None:
+    user = uuid4()
+    first, second = Phone(client, user), Phone(client, user)
+    card = records(first.send(cards=[change(CARD)]), "cards")[0]
+    first.send(cards=[deletion(card)])
+
+    answer = second.send(cards=[deletion(card)])
+
+    assert statuses(answer, "cards") == ["applied"]
+    assert row(engine, "cards", card["id"])["version"] == 2
+
+
+def test_deleting_the_income_frees_its_place_in_the_same_upload(phone, engine) -> None:
+    income = records(
+        phone.send(monthly_income=[change({"amount_cents": 2_500_000})]), "monthly_income"
+    )[0]
+
+    answer = phone.send(monthly_income=[deletion(income), change({"amount_cents": 3_000_000})])
+
+    old, new = records(answer, "monthly_income")
+    assert statuses(answer, "monthly_income") == ["applied", "applied"]
+    assert old["deleted_at"] is not None and new["deleted_at"] is None
+    assert new["data"] == {"amount_cents": 3_000_000}
+    assert count(engine, "monthly_income", phone.user) == 2
+
+
+def test_a_deleted_movement_needs_no_card(phone, engine) -> None:
+    key = uuid4()
+    first = phone.send(
+        cards=[change(CARD, key=key)], movements=[change(MOVEMENT, card={"key": str(key)})]
+    )
+    movement = records(first, "movements")[0]
+
+    answer = phone.send(movements=[deletion(movement)])
+
+    assert records(answer, "movements")[0]["card"] == movement["card"]
+    assert row(engine, "movements", movement["id"])["deleted_at"] is not None
+
+
+def test_a_deleted_record_is_still_in_the_base_months_later(client, engine) -> None:
+    phone = Phone(client, uuid4())
+    card = records(phone.send(cards=[change(CARD)]), "cards")[0]
+    phone.send(cards=[deletion(card)])
+
+    months_later = datetime.now(UTC) + timedelta(days=180)
+    client.app.state.sync = Sync(sql_store(sessionmaker(engine)), clock=lambda: months_later)
+    answer = phone.post(sent_at=months_later)
+
+    assert answer.status_code == 200
+    assert answer.json()["changes"]["cards"][0]["deleted_at"] is not None
+    assert count(engine, "cards", phone.user) == 1
+
+
+def test_deleting_a_movement_that_does_not_exist_names_its_position(phone, engine) -> None:
+    key = uuid4()
+    first = phone.send(
+        cards=[change(CARD, key=key)], movements=[change(MOVEMENT, card={"key": str(key)})]
+    )
+    movement = records(first, "movements")[0]
+    missing = {**deletion(movement), "id": str(uuid4())}
+
+    assert rejection(phone.post(movements=[deletion(movement), missing])) == {
+        "path": "changes.movements[1]",
+        "field": "id",
+        "rule": "not_found",
+    }
+    assert row(engine, "movements", movement["id"])["deleted_at"] is None
