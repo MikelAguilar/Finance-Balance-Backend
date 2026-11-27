@@ -1,21 +1,10 @@
 """Descarga por páginas: lo que cambió en el servidor después del cursor de la app."""
 
-from collections.abc import Mapping
 from dataclasses import dataclass
 from heapq import merge
 from uuid import UUID
 
-from finance_service.domain.errors import InvalidField
 from finance_service.domain.model import Card, MonthlyIncome, Movement
-from finance_service.domain.rules import MAX_BIGINT, Fields, whole_number
-
-
-def parse_download_request(data: object) -> int:
-    """Lee `{"cursor": n}`: el último número de cambio que la app recibió (0 la primera vez)."""
-    if not isinstance(data, Mapping):
-        raise InvalidField("body", "type")
-    fields = Fields(data, ("cursor",))
-    return whole_number(fields.required("cursor"), "cursor", 0, MAX_BIGINT)
 
 
 @dataclass(frozen=True)

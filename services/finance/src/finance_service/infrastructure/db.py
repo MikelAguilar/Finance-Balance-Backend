@@ -53,6 +53,9 @@ class SyncColumns:
     change_seq: Mapped[int] = mapped_column(
         BigInteger, server_default=text("nextval('finance.change_seq')")
     )
+    # El último cambio de la app que se aplicó: si llega otra vez (un reintento), no se aplica dos
+    # veces. Nulo en un registro que todavía no recibió ningún cambio con change_id.
+    last_change_id: Mapped[UUID | None]
 
 
 def unique_idempotency_key(table: str) -> UniqueConstraint:

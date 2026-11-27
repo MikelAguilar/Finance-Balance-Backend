@@ -4,6 +4,7 @@ El cuerpo lo validan las funciones parse_* del dominio (las mismas reglas que pr
 compartidos con la app), no un modelo de Pydantic: así cada regla vive en un solo lugar.
 """
 
+from collections.abc import Callable
 from dataclasses import asdict
 from datetime import timedelta, timezone
 from typing import Annotated, Any
@@ -11,15 +12,16 @@ from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, Request, status
 
-from finance_service.domain.download import CardMovement, Page, Stored, parse_download_request
+from finance_service.application.sync import Result, SyncResult
+from finance_service.domain.download import CardMovement, Page, Stored
 from finance_service.domain.errors import InvalidField
 from finance_service.domain.model import (
     Card,
     Installment,
-    KindName,
     MonthlyIncome,
     Movement,
     Payment,
+    kind_name,
 )
 
 router = APIRouter(tags=["finance"])
@@ -47,14 +49,13 @@ def movement_data(movement: Movement) -> dict[str, object]:
         "review_status": movement.review_status.value,
         "owner_cut": movement.owner_cut.isoformat(),
     }
-    match movement.kind:
-        case Installment(months=months, monthly_rate=rate):
-            # La tasa viaja como texto: un número de JSON es float y perdería precisión.
-            data |= {"kind": KindName.INSTALLMENT, "months": months, "monthly_rate": f"{rate:f}"}
-        case Payment(source=source):
-            data |= {"kind": KindName.PAYMENT, "payment_source": source.value}
-        case _:
-            data |= {"kind": KindName.NORMAL}
+    kind = movement.kind
+    data["kind"] = kind_name(kind)
+    if isinstance(kind, Installment):
+        # La tasa viaja como texto: un número de JSON es float y perdería precisión.
+        data |= {"months": kind.months, "monthly_rate": f"{kind.monthly_rate:f}"}
+    if isinstance(kind, Payment):
+        data["payment_source"] = kind.source.value
     return data
 
 
@@ -90,6 +91,28 @@ def page_json(page: Page) -> dict[str, object]:
     }
 
 
+def result_json[T](result: Result[T], to_json: Callable[[Stored[T]], dict[str, object]]) -> dict:
+    return {
+        "change_id": str(result.change_id),
+        "status": "applied" if result.applied else "lost",
+        "record": to_json(result.record),
+    }
+
+
+def sync_json(answer: SyncResult) -> dict[str, object]:
+    results = answer.results
+    return {
+        # En el orden en que llegaron: la app reconoce cada uno por su change_id y toma del
+        # registro el id y la versión que le asignó el servidor.
+        "results": {
+            "cards": [result_json(result, card_json) for result in results.cards],
+            "movements": [result_json(result, movement_json) for result in results.movements],
+            "monthly_income": [result_json(result, income_json) for result in results.incomes],
+        },
+        **page_json(answer.page),
+    }
+
+
 @router.post("/sync")
 def sync(
     request: Request,
@@ -97,9 +120,9 @@ def sync(
     body: Annotated[Any, Body()],
 ) -> dict[str, object]:
     try:
-        cursor = parse_download_request(body)
+        answer = request.app.state.sync(user_id, body)
     except InvalidField as error:
-        raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_CONTENT, {"field": error.field, "rule": error.rule}
-        ) from None
-    return page_json(request.app.state.download(user_id, cursor))
+        # Si una parte de la subida no vale, no se guarda nada (la transacción se deshace).
+        detail = {"path": error.path, "field": error.field, "rule": error.rule}
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail) from None
+    return sync_json(answer)

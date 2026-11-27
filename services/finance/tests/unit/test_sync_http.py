@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
@@ -5,6 +6,7 @@ from uuid import UUID, uuid4
 import pytest
 from fastapi.testclient import TestClient
 
+from finance_service.application.sync import Result, Results, Sync, SyncResult
 from finance_service.domain.download import CardMovement, Page, Stored
 from finance_service.domain.model import (
     Card,
@@ -50,22 +52,31 @@ def stored[T](value: T) -> Stored[T]:
     return Stored(id=uuid4(), key=uuid4(), version=3, seq=7, value=value)
 
 
-class FakeDownload:
-    def __init__(self, page: Page) -> None:
-        self.page = page
-        self.calls: list[tuple[UUID, int]] = []
+class FakeSync:
+    def __init__(self, answer: SyncResult) -> None:
+        self.answer = answer
+        self.calls: list[tuple[UUID, object]] = []
 
-    def __call__(self, user_id: UUID, after: int) -> Page:
-        self.calls.append((user_id, after))
-        return self.page
+    def __call__(self, user_id: UUID, body: object) -> SyncResult:
+        self.calls.append((user_id, body))
+        return self.answer
+
+
+EMPTY = Results([], [], [])
 
 
 @pytest.fixture
-def client(make_client) -> tuple[TestClient, FakeDownload]:
+def client(make_client) -> tuple[TestClient, FakeSync]:
     client = make_client("development")
-    fake = FakeDownload(Page([], [], [], cursor=9, has_more=False))
-    client.app.state.download = fake
+    fake = FakeSync(SyncResult(EMPTY, Page([], [], [], cursor=9, has_more=False)))
+    client.app.state.sync = fake
     return client, fake
+
+
+@contextmanager
+def no_database():
+    raise AssertionError("un cuerpo inválido no debe llegar a la base")
+    yield
 
 
 # --- Lo que baja se puede volver a subir ---------------------------------------------------------
@@ -122,11 +133,12 @@ def test_the_download_is_for_the_user_the_gateway_verified(client) -> None:
 
     assert response.status_code == 200
     assert response.json() == {
+        "results": {"cards": [], "movements": [], "monthly_income": []},
         "cursor": 9,
         "has_more": False,
         "changes": {"cards": [], "movements": [], "monthly_income": []},
     }
-    assert fake.calls == [(USER, 4)]
+    assert fake.calls == [(USER, {"cursor": 4})]
 
 
 @pytest.mark.parametrize("headers", [{}, {"X-User-Id": ""}, {"X-User-Id": "no-es-un-uuid"}])
@@ -142,24 +154,45 @@ def test_without_a_verified_user_it_is_a_401(client, headers: dict) -> None:
 @pytest.mark.parametrize(
     ("body", "detail"),
     [
-        ({"cursor": -1}, {"field": "cursor", "rule": "range"}),
-        ({}, {"field": "cursor", "rule": "required"}),
-        ([1], {"field": "body", "rule": "type"}),
+        ({"cursor": -1}, {"path": "", "field": "cursor", "rule": "range"}),
+        ([1], {"path": "", "field": "body", "rule": "type"}),
+        (
+            {"cursor": 0, "sent_at": "2026-11-26T05:30:00-06:00", "changes": {"cards": [{}]}},
+            {"path": "changes.cards[0]", "field": "key", "rule": "required"},
+        ),
     ],
 )
-def test_an_invalid_body_is_a_422_that_names_the_field_and_the_rule(
+def test_an_invalid_body_is_a_422_that_names_the_path_the_field_and_the_rule(
     client, body: object, detail: dict
 ) -> None:
-    client, fake = client
+    client, _ = client
+    client.app.state.sync = Sync(no_database)
 
     response = client.post("/sync", json=body, headers={"X-User-Id": str(USER)})
 
     assert response.status_code == 422
     assert response.json() == {"detail": detail}
-    assert fake.calls == []
 
 
 def test_the_user_is_checked_before_the_body(client) -> None:
     # Quien no pasó por el gateway no se entera de qué cuerpo es válido.
     client, _ = client
     assert client.post("/sync", json={"cursor": -1}).status_code == 401
+
+
+def test_each_result_says_how_the_change_ended_and_how_the_record_is(client) -> None:
+    client, fake = client
+    card, income = stored(CARD), stored(MonthlyIncome(2_500_000))
+    applied, lost = uuid4(), uuid4()
+    results = Results([Result(applied, True, card)], [], [Result(lost, False, income)])
+    fake.answer = SyncResult(results, Page([], [], [], cursor=9, has_more=False))
+
+    body = client.post("/sync", json={"cursor": 0}, headers={"X-User-Id": str(USER)}).json()
+
+    assert body["results"] == {
+        "cards": [{"change_id": str(applied), "status": "applied", "record": card_json(card)}],
+        "movements": [],
+        "monthly_income": [
+            {"change_id": str(lost), "status": "lost", "record": income_json(income)}
+        ],
+    }

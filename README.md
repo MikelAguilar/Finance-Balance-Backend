@@ -11,7 +11,7 @@ Backend de Finance Balance, una aplicación personal de finanzas para Android. E
 
 ## Estado
 
-En desarrollo. Hoy están disponibles el registro de cuentas, el inicio y cierre de sesión por dispositivo, la renovación de sesión, el cambio de contraseña, el perfil, la lista de dispositivos y la eliminación de la cuenta. El servicio de finanzas ya existe y solo acepta peticiones con una sesión activa. Ya tiene las tablas y reglas de tarjetas, movimientos (cargos, compras a meses y pagos) e ingreso mensual, y la app puede descargar sus datos por páginas; subir los cambios de la app llega en el siguiente PR.
+En desarrollo. Hoy están disponibles el registro de cuentas, el inicio y cierre de sesión por dispositivo, la renovación de sesión, el cambio de contraseña, el perfil, la lista de dispositivos y la eliminación de la cuenta. El servicio de finanzas ya existe y solo acepta peticiones con una sesión activa. Ya tiene las tablas y reglas de tarjetas, movimientos (cargos, compras a meses y pagos) e ingreso mensual, y la sincronización completa: la app sube sus cambios (también los hechos sin red) y descarga lo que cambió, por páginas.
 
 ## Arquitectura
 
@@ -95,7 +95,7 @@ Swagger solo está disponible en desarrollo. En producción se desactiva.
 | GET    | `/health`            | Indica si el gateway está activo. |
 | GET    | `/auth/health`       | Indica si el servicio de autenticación está activo. |
 | GET    | `/finance/health`    | Indica si el servicio de finanzas está activo. Requiere sesión activa (`401` sin ella). |
-| POST   | `/finance/sync`      | Descarga lo que cambió en la cuenta después de `cursor` (`{"cursor": 0}` la primera vez), en páginas de 500, con el `cursor` nuevo y `has_more`. Requiere sesión activa. `422` con campo y regla si el cuerpo no es válido. |
+| POST   | `/finance/sync`      | Aplica los cambios que sube la app (`sent_at` y `changes`, opcionales) y descarga lo que cambió en la cuenta después de `cursor` (`{"cursor": 0}` la primera vez), en páginas de 500, con el `cursor` nuevo y `has_more`. Requiere sesión activa. `422` con ruta, campo y regla si algo no es válido; entonces no se guarda nada. |
 | POST   | `/auth/register`     | Crea una cuenta con `first_name`, `last_name` (todos los apellidos en un campo; 1 a 100 caracteres cada uno, sin caracteres de control), correo y contraseña (12 a 128 caracteres). `201`; `409` si el correo ya existe; `422` si falta un dato o no es válido. |
 | POST   | `/auth/sessions`     | Inicia sesión en un dispositivo (`device_id`, `device_name`). Devuelve el token de acceso (15 min) y el refresh token (90 días). `401` si las credenciales no son válidas; `429` (con `Retry-After`) tras 5 fallos del mismo correo en 15 minutos. |
 | POST   | `/auth/sessions/refresh` | Entrega tokens nuevos a cambio del refresh token, que deja de servir. Reutilizar uno viejo cierra la sesión. `401` si no es válido. |
@@ -134,7 +134,17 @@ Cada escritura en finanzas toma el siguiente número de una secuencia (`change_s
 - Cada sincronización toma un candado por cuenta: dos teléfonos de la misma cuenta van uno detrás del otro y nunca llega una página a medias.
 - Cada registro trae `id`, `key` (la clave que generó la app), `version` y `data` con la misma forma que la app sube.
 
-`services/finance/contract/sync-examples.json` tiene peticiones y respuestas reales; las pruebas de Python las comparan con lo que contesta el servidor.
+### Sincronización: subida de cambios
+
+La app manda en la misma llamada lo que cambió sin red: `sent_at` (la hora de su reloj al enviar) y `changes` con `cards`, `movements` y `monthly_income`.
+
+- Un registro nuevo lleva `key` (la clave que genera la app); una edición, `id` y `base_version` (la versión sobre la que se editó). Siempre: `change_id`, `updated_at` con offset y `data`. Un movimiento apunta a su tarjeta con `{"id"}` o con `{"key"}`, también de una tarjeta de la misma subida.
+- Si la versión coincide, el cambio se aplica. Si no (dos teléfonos editaron lo mismo), gana la hora de edición más reciente, corregida con la diferencia entre el reloj del teléfono y el del servidor; si empatan, se queda lo que ya estaba. Una hora posterior al envío cuenta como hecha al enviar.
+- Reintentar es seguro: la clave de cada registro nuevo y el `change_id` de cada edición evitan duplicar o aplicar dos veces.
+- Crear un ingreso cuando ya hay uno vigente se resuelve como un choque con él.
+- `results` dice, en el orden de la petición, si cada cambio quedó `applied` o `lost` y cómo quedó el registro. Si algo no vale (`not_found`, `duplicate`, `too_many` o una regla de los datos), responde `422` y no se guarda nada.
+
+`services/finance/contract/sync-examples.json` tiene peticiones y respuestas reales de descarga y de subida; las pruebas de Python las comparan con lo que contesta el servidor.
 
 ## Pruebas
 

@@ -1,7 +1,6 @@
-from contextlib import contextmanager
 from uuid import UUID, uuid4
 
-from finance_service.application.download import Download
+from finance_service.application.download import read_page
 from finance_service.domain.download import Stored
 
 
@@ -35,10 +34,6 @@ def test_each_page_reads_at_most_one_page_plus_one_record_from_each_table() -> N
     # Con uno de más se sabe si queda otra página; sin límite, cada página leería la cuenta entera.
     store = CountingStore()
 
-    @contextmanager
-    def open_store():
-        yield store
-
-    Download(open_store, page_size=7)(uuid4(), 0)
+    read_page(store, uuid4(), 0, page_size=7)
 
     assert store.limits == {"cards": 8, "movements": 8, "incomes": 8}

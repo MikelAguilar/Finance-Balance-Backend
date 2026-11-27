@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import pytest
@@ -8,10 +9,12 @@ from finance_service.domain.download import (
     Stored,
     cut_page,
     missing_cards,
-    parse_download_request,
 )
 from finance_service.domain.errors import InvalidField
 from finance_service.domain.model import MAX_CENTS
+from finance_service.domain.sync import parse_sync_request
+
+NOW = datetime(2026, 11, 26, tzinfo=UTC)
 
 
 def stored(seq: int, value: object = None, id: UUID | None = None) -> Stored:
@@ -26,9 +29,9 @@ def on_card(seq: int, card_id: UUID) -> Stored:
 
 
 def test_the_app_says_from_which_change_it_wants_to_download() -> None:
-    assert parse_download_request({"cursor": 0}) == 0
-    assert parse_download_request({"cursor": 41}) == 41
-    assert parse_download_request({"cursor": MAX_CENTS}) == MAX_CENTS
+    assert parse_sync_request({"cursor": 0}, NOW).cursor == 0
+    assert parse_sync_request({"cursor": 41}, NOW).cursor == 41
+    assert parse_sync_request({"cursor": MAX_CENTS}, NOW).cursor == MAX_CENTS
 
 
 @pytest.mark.parametrize(
@@ -39,14 +42,14 @@ def test_the_app_says_from_which_change_it_wants_to_download() -> None:
         ({"cursor": MAX_CENTS + 1}, ("cursor", "range")),
         ({"cursor": "3"}, ("cursor", "type")),
         ({"cursor": True}, ("cursor", "type")),
-        ({"cursor": 0, "changes": {}}, ("changes", "unknown")),
+        ({"cursor": 0, "accounts": {}}, ("accounts", "unknown")),
         ([], ("body", "type")),
         ("cursor", ("body", "type")),
     ],
 )
 def test_an_invalid_request_names_the_field_and_the_rule(data: object, expected: tuple) -> None:
     with pytest.raises(InvalidField) as error:
-        parse_download_request(data)
+        parse_sync_request(data, NOW)
     assert (error.value.field, error.value.rule) == expected
 
 
