@@ -77,6 +77,15 @@ Solo el gateway publica un puerto. Los servicios se comunican por la red interna
 
 El archivo `.env` contiene secretos locales y nunca se sube al repositorio.
 
+## Producción
+
+La API corre en una VM e2-micro de Google Cloud (Debian) y responde en `https://api.risteyra.com`. El dominio está en Cloudflare, con un registro `A` en modo *DNS only* hacia la IP estática de la VM.
+
+- **Mismo compose, otro archivo encima:** `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --wait`. `docker-compose.prod.yml` usa imágenes ya construidas (sin `build`), no publica la base, abre 80 y 443 y reinicia los contenedores si se caen.
+- **HTTPS:** el mismo Caddy del gateway. Con `SITE_ADDRESS=api.risteyra.com` saca el certificado de Let's Encrypt, lo renueva solo y redirige HTTP a HTTPS. Sin la variable (desarrollo y CI) escucha en `:8080` sin certificado.
+- **Secretos:** solo en `/srv/finance-balance/.env` de la VM (permisos 600). Las claves se generan en la propia VM; `.env.production.example` documenta qué contiene.
+- **Preparar la VM (una vez):** `deploy/preparar-vm.sh` instala Docker, agrega 1 GB de swap, activa las actualizaciones de seguridad, crea el usuario `deploy` y el `.env`. Es idempotente; se ejecuta desde el botón SSH de Google Cloud (instrucciones al inicio del script).
+
 ## Documentación de la API
 
 La API se documenta con Swagger (OpenAPI), que FastAPI genera automáticamente:
