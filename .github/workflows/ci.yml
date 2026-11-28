@@ -161,14 +161,14 @@ jobs:
       # Valores de ejemplo: la base de datos solo existe durante esta ejecución.
       - run: cp .env.example .env
       # Producción (base + docker-compose.prod.yml) sin levantarla: imágenes del registro y no
-      # build, base sin puerto publicado, HTTPS en 80/443 y Swagger apagado.
+      # build, base solo en el 127.0.0.1 de la VM, HTTPS en 80/443 y Swagger apagado.
       - name: Configuración de producción
         env:
           SITE_ADDRESS: api.example.com
           IMAGE_TAG: ${{ github.sha }}
         run: |
           docker compose -f docker-compose.yml -f docker-compose.prod.yml config --format json > prod.json
-          jq -e '.services.db.ports // [] | length == 0' prod.json
+          jq -e '.services.db.ports | length == 1 and all(.host_ip == "127.0.0.1")' prod.json
           jq -e --arg tag "$IMAGE_TAG" '[.services.auth, .services.finance]
             | all(.image | startswith("ghcr.io/") and endswith(":" + $tag))' prod.json
           jq -e '[.services.auth, .services.finance] | all(has("build") | not)' prod.json

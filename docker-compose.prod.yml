@@ -10,9 +10,10 @@ x-restart: &restart
 services:
   db:
     <<: *restart
-    # La base no se publica ni siquiera en localhost: solo la alcanzan los servicios por la red
-    # interna de Compose. El respaldo se hace con docker compose exec db pg_dump.
-    ports: !reset []
+    # Solo en el 127.0.0.1 de la VM, nunca en internet (el firewall de Google tampoco abre el 5432).
+    # Luis entra con DBeaver por un túnel SSH para ver, respaldar y limpiar lo marcado.
+    ports: !override
+      - "127.0.0.1:5432:5432"
 
   auth:
     <<: *restart
