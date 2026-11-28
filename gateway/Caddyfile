@@ -1,12 +1,14 @@
 # Gateway: única puerta de entrada a los servicios. Recibe todas las peticiones y las
-# reparte según el inicio de la ruta. En B4 este mismo Caddy dará HTTPS automático.
+# reparte según el inicio de la ruta.
 {
-	# Sin HTTPS por ahora (se activa en B4, con el dominio) y sin API de administración.
-	auto_https off
+	# Sin API de administración: nadie puede cambiar la configuración en caliente.
 	admin off
 }
 
-:8080 {
+# SITE_ADDRESS decide si hay HTTPS. Sin definir (desarrollo y CI) vale :8080: solo un puerto, sin
+# nombre de dominio, así que Caddy no pide certificado. En producción vale api.risteyra.com: Caddy
+# escucha en 80 y 443, saca el certificado de Let's Encrypt, lo renueva solo y redirige HTTP a HTTPS.
+{$SITE_ADDRESS::8080} {
 	# Un cuerpo de más de 1 MB se rechaza con 413 antes de llegar a los servicios.
 	request_body {
 		max_size 1MB

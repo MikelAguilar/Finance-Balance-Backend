@@ -1,0 +1,50 @@
+# Producción (la VM de Google Cloud). Se usa encima del archivo base:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --wait
+# Solo cambia lo que difiere de desarrollo: imágenes ya construidas por el CI en lugar de build,
+# HTTPS en los puertos 80 y 443, y reinicio automático si la VM o un contenedor se caen.
+# Los valores salen del .env de la VM (ver .env.production.example).
+
+x-restart: &restart
+  restart: unless-stopped
+
+services:
+  db:
+    <<: *restart
+    # Solo en el 127.0.0.1 de la VM, nunca en internet (el firewall de Google tampoco abre el 5432).
+    # Luis entra con DBeaver por un túnel SSH para ver, respaldar y limpiar lo marcado.
+    ports: !override
+      - "127.0.0.1:5432:5432"
+
+  auth:
+    <<: *restart
+    build: !reset null
+    image: ${IMAGE_REPOSITORY:-ghcr.io/mikelaguilar/finance-balance-backend}/auth:${IMAGE_TAG:?Define IMAGE_TAG (el commit a desplegar)}
+    environment:
+      APP_ENV: production
+
+  finance:
+    <<: *restart
+    build: !reset null
+    image: ${IMAGE_REPOSITORY:-ghcr.io/mikelaguilar/finance-balance-backend}/finance:${IMAGE_TAG:?Define IMAGE_TAG (el commit a desplegar)}
+    environment:
+      APP_ENV: production
+
+  gateway:
+    <<: *restart
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:?Define SITE_ADDRESS en .env (el dominio de la API)}
+    # 80 para el reto de Let's Encrypt y la redirección a HTTPS; 443 TCP y UDP (HTTP/3).
+    ports: !override
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      # Certificados y su estado: sin este volumen, cada despliegue pediría un certificado nuevo
+      # y Let's Encrypt limita cuántos se pueden pedir por semana.
+      - caddy_data:/data
+      - caddy_config:/config
+    mem_limit: 96m
+
+volumes:
+  caddy_data:
+  caddy_config:
