@@ -37,6 +37,9 @@ jobs:
       # fuera: repiten a propósito los valores esperados (son su oráculo).
       - name: Duplicación (pylint)
         run: uv run pylint --disable=all --enable=duplicate-code --min-similarity-lines=6 libs/*/src services/*/src tools/crap.py
+      # Scripts de la VM: shellcheck ya viene instalado en ubuntu-latest.
+      - name: Scripts de despliegue (shellcheck)
+        run: shellcheck deploy/*.sh
 
   seguridad:
     runs-on: ubuntu-latest
