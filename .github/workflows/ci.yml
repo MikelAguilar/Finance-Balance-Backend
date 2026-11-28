@@ -157,6 +157,30 @@ jobs:
       - uses: actions/checkout@v7
       # Valores de ejemplo: la base de datos solo existe durante esta ejecución.
       - run: cp .env.example .env
+      # Producción (base + docker-compose.prod.yml) sin levantarla: imágenes del registro y no
+      # build, base sin puerto publicado, HTTPS en 80/443 y Swagger apagado.
+      - name: Configuración de producción
+        env:
+          SITE_ADDRESS: api.example.com
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml config --format json > prod.json
+          jq -e '.services.db.ports // [] | length == 0' prod.json
+          jq -e --arg tag "$IMAGE_TAG" '[.services.auth, .services.finance]
+            | all(.image | startswith("ghcr.io/") and endswith(":" + $tag))' prod.json
+          jq -e '[.services.auth, .services.finance] | all(has("build") | not)' prod.json
+          jq -e '[.services.auth, .services.finance] | all(.environment.APP_ENV == "production")' prod.json
+          jq -e '[.services.gateway.ports[].published | tostring] | any(. == "443")' prod.json
+          jq -e '[.services.gateway.ports[].host_ip // ""] | all(. != "127.0.0.1")' prod.json
+          jq -e '.services.gateway.environment.SITE_ADDRESS == "api.example.com"' prod.json
+          jq -e '[.services[].restart] | all(. == "unless-stopped")' prod.json
+      # El mismo Caddyfile, con un dominio, sirve ese dominio (y por eso Caddy activará HTTPS).
+      - name: Caddyfile con dominio
+        run: |
+          docker run --rm -e SITE_ADDRESS=api.example.com \
+            -v "$PWD/gateway/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2.11.9-alpine \
+            caddy adapt --config /etc/caddy/Caddyfile --validate > caddy.json
+          jq -e '[.. | .host? // empty | .[]] | any(. == "api.example.com")' caddy.json
       - run: docker compose up --build -d --wait
       # Por el gateway: /health es del gateway y /auth/health llega al servicio de autenticación.
       - run: curl --fail --retry 15 --retry-delay 2 --retry-all-errors http://localhost:8000/health
